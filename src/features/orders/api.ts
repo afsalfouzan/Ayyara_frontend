@@ -1,0 +1,111 @@
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+
+export type OrderStatus = 'pending_payment' | 'confirmed' | 'cancelled' | 'expired';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_refunded';
+export type FulfilmentStatus = 'unfulfilled' | 'processing' | 'packed' | 'dispatched' | 'delivered' | 'cancelled' | 'returned';
+export type OrderView = 'all' | 'awaiting_payment' | 'to_pack' | 'dispatched' | 'delivered' | 'closed' | 'unpaid' | 'paid' | 'cancelled';
+export type Channel = 'online' | 'offline';
+
+type Shipping = { city: string; state: string; pincode: string; name?: string; line1?: string; line2?: string };
+
+export type OrderSummary = {
+  id: number;
+  orderNumber: string;
+  channel: Channel;
+  deliveryRequired: boolean;
+  customerId: number;
+  customerName: string;
+  email: string | null;
+  phone: string;
+  piiHidden: boolean;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  fulfilmentStatus: FulfilmentStatus;
+  totalPaise: number;
+  subtotalPaise: number;
+  shippingPaise: number;
+  discountPaise: number;
+  reservationExpiresAt: string | null;
+  courier: string | null;
+  trackingNumber: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  customerNotes: string;
+  shipping: Shipping;
+  itemSummary?: string;
+  units?: number;
+};
+
+export type OrderDetail = OrderSummary & {
+  items: { id: number; productName: string; sizeMl: number; quantity: number; unitPricePaise: number; lineTotalPaise: number }[];
+  history: { id: number; field: 'status' | 'payment' | 'fulfilment'; fromStatus: string | null; toStatus: string; note: string | null; actor: string | null; createdAt: string }[];
+  payments: { id: number; provider: 'razorpay' | 'offline'; reference: string | null; razorpayPaymentId: string | null; amountPaise: number; status: string; method: string | null; errorDescription: string | null; createdAt: string }[];
+  refunds: { id: number; amountPaise: number; status: 'pending' | 'processed' | 'failed'; reason: string; stockAction: 'none' | 'cancel_restock' | 'returned'; automatic: boolean; razorpayRefundId: string | null; processedAt: string | null; createdAt: string }[];
+  refundablePaise: number;
+  nextFulfilmentSteps: ('processing' | 'packed' | 'dispatched' | 'delivered')[];
+  canCancel: boolean;
+  canRecordPayment: boolean;
+};
+
+export type OrderFilters = { channel?: Channel; view: OrderView; page: number; search: string; from: string; to: string };
+
+export function useOrders(filters: OrderFilters) {
+  const params = new URLSearchParams({ channel: filters.channel ?? 'online', view: filters.view, page: String(filters.page), pageSize: '20' });
+  for (const key of ['search', 'from', 'to'] as const) if (filters[key]) params.set(key, filters[key]);
+  return useQuery({
+    queryKey: ['orders', filters],
+    queryFn: () => api<{ items: OrderSummary[]; counts: Record<OrderView, number>; page: number; pageSize: number; total: number }>(`/admin/orders?${params}`),
+    placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useOrder(id: number | null) {
+  return useQuery({
+    queryKey: ['orders', 'detail', id],
+    queryFn: () => api<{ order: OrderDetail }>(`/admin/orders/${id}`).then((d) => d.order),
+    enabled: id != null,
+  });
+}
+
+function useOrderMutation<TInput>(id: number, path: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: TInput) => api<{ order: OrderDetail }>(`/admin/orders/${id}/${path}`, { method: 'POST', body: input }).then((d) => d.order),
+    onSuccess: (order) => {
+      queryClient.setQueryData(['orders', 'detail', id], order);
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['stock'] });
+      void queryClient.invalidateQueries({ queryKey: ['customers'] });
+    },
+  });
+}
+
+export const useUpdateFulfilment = (id: number) => useOrderMutation<{ status: string; courier?: string; trackingNumber?: string; note?: string }>(id, 'fulfilment');
+export const useCancelOrder = (id: number) => useOrderMutation<{ reason: string }>(id, 'cancel');
+
+export const useRecordOfflinePayment = (id: number) => useOrderMutation<{ method: OfflineMethod; reference?: string }>(id, 'offline-payment');
+export const useCancelOfflineOrder = (id: number) => useOrderMutation<{ reason: string }>(id, 'offline-cancel');
+
+export const OFFLINE_METHODS = ['cash', 'upi', 'card', 'bank_transfer', 'other'] as const;
+export type OfflineMethod = (typeof OFFLINE_METHODS)[number];
+export const OFFLINE_METHOD_LABEL: Record<OfflineMethod, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', bank_transfer: 'Bank transfer', other: 'Other' };
+
+export type OfflineOrderInput = {
+  requestId: string;
+  saleDate: string;
+  items: { variantId: number; quantity: number; unitPricePaise: number }[];
+  customer: { name: string; phone: string; email?: string };
+  delivery: { required: false } | { required: true; addressLine1: string; addressLine2: string; city: string; state: string; pincode: string };
+  payment: { status: 'unpaid' } | { status: 'paid'; method: OfflineMethod; reference: string };
+  note: string;
+};
+
+export function useCreateOfflineOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: OfflineOrderInput) => api<{ order: OrderDetail }>('/admin/orders/offline', { method: 'POST', body: input }).then((d) => d.order),
+    onSuccess: () => Promise.all(['orders', 'stock', 'customers', 'payments'].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
+  });
+}

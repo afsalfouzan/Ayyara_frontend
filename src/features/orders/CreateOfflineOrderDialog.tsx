@@ -1,0 +1,320 @@
+import { clsx } from 'clsx';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { Plus, Trash2 } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Button } from '@/components/ui/Button';
+import { controlClass, FormField, Select, Switch, TextArea } from '@/components/ui/controls';
+import { Modal } from '@/components/ui/Modal';
+import { toast } from '@/components/ui/Toast';
+import { useStock, type Perfume } from '@/features/stock/api';
+import { fieldErrorsOf, messageOf } from '@/lib/errors';
+import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
+import { INDIAN_STATES } from '@/lib/states';
+import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCreateOfflineOrder, type OfflineMethod, type OrderDetail } from './api';
+
+type Row = { key: string; perfumeId: string; variantId: string; quantity: string; price: string };
+const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfumeId: '', variantId: '', quantity: '1', price: '' });
+const today = () => new Date().toLocaleDateString('en-CA');
+
+export function CreateOfflineOrderDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (order: OrderDetail) => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="New offline order" description="A sale made in person or over the phone. Stock is deducted as soon as you save.">
+      {open && <OfflineOrderForm onDone={onClose} onCreated={onCreated} />}
+    </Modal>
+  );
+}
+
+function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated: (order: OrderDetail) => void }) {
+  const stock = useStock();
+  const create = useCreateOfflineOrder();
+  const perfumes: Perfume[] = stock.data?.items ?? [];
+  // One id per form: a double-click or retry creates one order.
+  const [requestId] = useState(() => crypto.randomUUID());
+  const [saleDate, setSaleDate] = useState(today);
+  const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
+  const [customer, setCustomer] = useState({ name: '', phone: '', email: '' });
+  const [delivery, setDelivery] = useState(false);
+  const [address, setAddress] = useState({ addressLine1: '', addressLine2: '', city: '', state: '', pincode: '' });
+  const [paid, setPaid] = useState(true);
+  const [method, setMethod] = useState<OfflineMethod>('cash');
+  const [reference, setReference] = useState('');
+  const [note, setNote] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const update = (key: string, patch: Partial<Row>) => setRows((current) => current.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const perfumeOf = (row: Row) => perfumes.find((p) => String(p.id) === row.perfumeId);
+  const variantOf = (row: Row) => perfumeOf(row)?.variants.find((v) => String(v.id) === row.variantId);
+  const lineTotal = (row: Row) => {
+    const price = parseRupees(row.price);
+    return price && !Number.isNaN(price) && /^\d+$/.test(row.quantity) ? price * Number(row.quantity) : 0;
+  };
+  const total = rows.reduce((sum, row) => sum + lineTotal(row), 0);
+
+  async function submit() {
+    const next: Record<string, string> = {};
+    rows.forEach((row, i) => {
+      const variant = variantOf(row);
+      if (!variant) next[`${i}.variant`] = 'Choose a perfume and size';
+      const qty = Number(row.quantity);
+      if (!/^\d+$/.test(row.quantity) || qty < 1) next[`${i}.quantity`] = 'Enter quantity';
+      else if (variant && qty > variant.stock.available) next[`${i}.quantity`] = `Only ${variant.stock.available} available`;
+      const price = parseRupees(row.price);
+      if (price == null || Number.isNaN(price) || price < 100) next[`${i}.price`] = 'Enter price';
+      else if (variant && price > variant.mrpPaise) next[`${i}.price`] = `Max MRP ${formatPaise(variant.mrpPaise)}`;
+    });
+    if (new Set(rows.map((r) => r.variantId).filter(Boolean)).size !== rows.filter((r) => r.variantId).length) next.items = 'Each perfume and size can appear only once — combine the quantities';
+    if (customer.name.trim().length < 2) next.name = 'Enter the customer’s name';
+    if (!/^[6-9]\d{9}$/.test(customer.phone.replace(/[\s-]/g, '').replace(/^(\+91|0)/, ''))) next.phone = 'Enter a 10-digit mobile number';
+    if (customer.email && !/^\S+@\S+\.\S+$/.test(customer.email)) next.email = 'Enter a valid email';
+    if (delivery) {
+      if (address.addressLine1.trim().length < 5) next.addressLine1 = 'Enter house number and street';
+      if (address.city.trim().length < 2) next.city = 'Enter the city';
+      if (!address.state) next.state = 'Select the state';
+      if (!/^[1-9]\d{5}$/.test(address.pincode)) next.pincode = 'Enter a 6-digit PIN code';
+    }
+    setErrors(next);
+    if (Object.keys(next).length) return;
+
+    try {
+      const order = await create.mutateAsync({
+        requestId,
+        saleDate,
+        items: rows.map((row) => ({ variantId: Number(row.variantId), quantity: Number(row.quantity), unitPricePaise: parseRupees(row.price)! })),
+        customer: { name: customer.name.trim(), phone: customer.phone, ...(customer.email.trim() ? { email: customer.email.trim() } : {}) },
+        delivery: delivery ? { required: true, ...address } : { required: false },
+        payment: paid ? { status: 'paid', method, reference: reference.trim() } : { status: 'unpaid' },
+        note: note.trim(),
+      });
+      toast(`Offline order ${order.orderNumber} saved`);
+      onCreated(order);
+      onDone();
+    } catch (error) {
+      const fieldErrors = fieldErrorsOf(error);
+      const mapped: Record<string, string> = {};
+      for (const [key, message] of Object.entries(fieldErrors)) {
+        const m = /^items\.(\d+)\.(\w+)/.exec(key);
+        if (m) mapped[`${m[1]}.${m[2] === 'unitPricePaise' ? 'price' : m[2] === 'quantity' ? 'quantity' : 'variant'}`] = message;
+        else mapped[key.replace(/^(customer|delivery)\./, '')] = message;
+      }
+      if (Object.keys(mapped).length) setErrors(mapped);
+      else toast(messageOf(error), 'error');
+    }
+  }
+
+  return (
+    <div className="space-y-7">
+      <Section title="Perfumes">
+        <div className="mb-2 hidden grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem] gap-3 px-1 text-xs font-medium text-fg-subtle lg:grid">
+          <span>Perfume</span>
+          <span>Size</span>
+          <span>Qty</span>
+          <span>Price each (₹)</span>
+          <span className="text-right">Total</span>
+          <span />
+        </div>
+        {errors.items && <p className="mb-2 text-xs text-danger">{errors.items}</p>}
+        <ul className="space-y-3">
+          {rows.map((row, i) => {
+            const perfume = perfumeOf(row);
+            const variant = variantOf(row);
+            return (
+              <li key={row.key} className="grid grid-cols-2 gap-3 rounded-xl border border-border p-3 lg:grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem] lg:items-start lg:rounded-none lg:border-0 lg:p-0">
+                <Cell label="Perfume" className="col-span-2 lg:col-span-1">
+                  <Select aria-label="Perfume" className="w-full" value={row.perfumeId} onChange={(e) => update(row.key, { perfumeId: e.target.value, variantId: '', price: '' })}>
+                    <option value="">{stock.isPending ? 'Loading…' : 'Choose perfume…'}</option>
+                    {perfumes.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Cell>
+                <Cell label="Size" error={errors[`${i}.variant`]} className="col-span-2 sm:col-span-1">
+                  <Select
+                    aria-label="Size"
+                    className="w-full"
+                    value={row.variantId}
+                    disabled={!perfume}
+                    onChange={(e) => {
+                      const v = perfume?.variants.find((x) => String(x.id) === e.target.value);
+                      // Prefill the selling price from Stock.
+                      update(row.key, { variantId: e.target.value, price: v ? paiseToInput(v.pricePaise) : '' });
+                    }}
+                  >
+                    <option value="">Size…</option>
+                    {perfume?.variants.map((v) => (
+                      <option key={v.id} value={v.id} disabled={v.stock.available <= 0}>
+                        {v.sizeMl} ML · {v.stock.available > 0 ? `${v.stock.available} available` : 'out of stock'}
+                      </option>
+                    ))}
+                  </Select>
+                </Cell>
+                <Cell label="Qty" error={errors[`${i}.quantity`]}>
+                  <input aria-label="Quantity" inputMode="numeric" className={`${controlClass} w-full`} value={row.quantity} onChange={(e) => update(row.key, { quantity: e.target.value.replace(/\D/g, '') })} />
+                </Cell>
+                <Cell label="Price each (₹)" error={errors[`${i}.price`]}>
+                  <input aria-label="Price each" inputMode="decimal" className={`${controlClass} w-full`} value={row.price} disabled={!variant} onChange={(e) => update(row.key, { price: e.target.value })} />
+                  {variant && <p className="mt-1 text-[0.6875rem] text-fg-subtle">MRP {formatPaise(variant.mrpPaise)}</p>}
+                </Cell>
+                <Cell label="Total" className="lg:text-right">
+                  <p className="flex h-9 items-center text-sm font-medium tabular-nums lg:justify-end">{lineTotal(row) ? formatPaise(lineTotal(row)) : '—'}</p>
+                </Cell>
+                <div className="flex justify-end">
+                  <Button variant="ghost" aria-label="Remove row" disabled={rows.length === 1} onClick={() => setRows((c) => c.filter((r) => r.key !== row.key))}>
+                    <Trash2 className="size-4" aria-hidden />
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-3 flex items-center justify-between">
+          <Button variant="secondary" size="sm" onClick={() => setRows((c) => [...c, emptyRow()])} disabled={rows.length >= 30}>
+            <Plus className="size-3.5" aria-hidden />
+            Add perfume
+          </Button>
+          <p className="text-sm">
+            Order total <strong className="ml-1 text-base tabular-nums">{formatPaise(total)}</strong>
+          </p>
+        </div>
+      </Section>
+
+      <Section title="Customer">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <FormField label="Name" htmlFor="oc-name" error={errors.name}>
+            <input id="oc-name" className={`${controlClass} w-full`} value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+          </FormField>
+          <FormField label="Mobile number" htmlFor="oc-phone" error={errors.phone}>
+            <input id="oc-phone" inputMode="tel" className={`${controlClass} w-full`} value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+          </FormField>
+          <FormField label="Email (optional)" htmlFor="oc-email" error={errors.email}>
+            <input id="oc-email" type="email" className={`${controlClass} w-full`} value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} />
+          </FormField>
+        </div>
+        <div className="mt-4 flex items-center justify-between rounded-lg border border-border p-3">
+          <div>
+            <p className="text-sm font-medium">Needs delivery</p>
+            <p className="text-xs text-fg-muted">{delivery ? 'The order will go through packing and dispatch.' : 'Handed over to the customer now.'}</p>
+          </div>
+          <Switch label="Needs delivery" checked={delivery} onChange={setDelivery} />
+        </div>
+        {delivery && (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <FormField label="House / flat, street" htmlFor="oc-line1" error={errors.addressLine1}>
+                <input id="oc-line1" className={`${controlClass} w-full`} value={address.addressLine1} onChange={(e) => setAddress({ ...address, addressLine1: e.target.value })} />
+              </FormField>
+            </div>
+            <div className="sm:col-span-2">
+              <FormField label="Area, landmark (optional)" htmlFor="oc-line2">
+                <input id="oc-line2" className={`${controlClass} w-full`} value={address.addressLine2} onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })} />
+              </FormField>
+            </div>
+            <FormField label="City" htmlFor="oc-city" error={errors.city}>
+              <input id="oc-city" className={`${controlClass} w-full`} value={address.city} onChange={(e) => setAddress({ ...address, city: e.target.value })} />
+            </FormField>
+            <FormField label="PIN code" htmlFor="oc-pin" error={errors.pincode}>
+              <input id="oc-pin" inputMode="numeric" maxLength={6} className={`${controlClass} w-full`} value={address.pincode} onChange={(e) => setAddress({ ...address, pincode: e.target.value.replace(/\D/g, '') })} />
+            </FormField>
+            <div className="sm:col-span-2">
+              <FormField label="State" htmlFor="oc-state" error={errors.state}>
+                <Select id="oc-state" className="w-full" value={address.state} onChange={(e) => setAddress({ ...address, state: e.target.value })}>
+                  <option value="">Select state…</option>
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Payment">
+        <div role="radiogroup" aria-label="Payment status" className="grid grid-cols-2 gap-2 sm:max-w-sm">
+          {[
+            { value: true, label: 'Paid now' },
+            { value: false, label: 'Not paid yet' },
+          ].map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              role="radio"
+              aria-checked={paid === option.value}
+              onClick={() => setPaid(option.value)}
+              className={clsx('rounded-lg border px-3 py-2.5 text-sm font-medium', paid === option.value ? 'border-fg bg-surface-muted text-fg' : 'border-border text-fg-muted hover:text-fg')}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {paid ? (
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="mb-2 text-sm font-medium">How did they pay?</p>
+              <div role="radiogroup" aria-label="Payment method" className="flex flex-wrap gap-2">
+                {OFFLINE_METHODS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={method === m}
+                    onClick={() => setMethod(m)}
+                    className={clsx('rounded-full border px-4 py-1.5 text-sm', method === m ? 'border-fg bg-primary text-primary-fg' : 'border-border text-fg-muted hover:text-fg')}
+                  >
+                    {OFFLINE_METHOD_LABEL[m]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {method !== 'cash' && (
+              <FormField label="Reference (optional)" htmlFor="oc-ref" hint={method === 'upi' ? 'UPI transaction ID, to match with your bank statement.' : 'Card slip, transfer or cheque number.'}>
+                <input id="oc-ref" className={`${controlClass} w-full sm:max-w-sm`} value={reference} onChange={(e) => setReference(e.target.value)} />
+              </FormField>
+            )}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-fg-muted">You can record the payment later from the order.</p>
+        )}
+      </Section>
+
+      <FormField label="Note (optional)" htmlFor="oc-note">
+        <TextArea id="oc-note" rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Sold at the Kochi pop-up" />
+      </FormField>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+        <label className="flex items-center gap-2 text-sm text-fg-muted">
+          Sale date
+          <DatePicker label="Sale date" max={today()} className="w-full sm:w-60" value={saleDate} onChange={setSaleDate} />
+        </label>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onDone}>
+            Cancel
+          </Button>
+          <Button onClick={submit} loading={create.isPending}>
+            Save order · {formatPaise(total)}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function Cell({ label, error, className, children }: { label: string; error?: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={className}>
+      <span className="mb-1 block text-xs font-medium text-fg-subtle lg:hidden">{label}</span>
+      {children}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
