@@ -29,6 +29,8 @@ Implemented: login, forced password change for temporary passwords, Users & Perm
 - Hiding nav items / pages is cosmetic. The backend checks permissions on every request.
 - Deploy admin and API on subdomains of the **same domain** (e.g. `admin.` and `api.`) so the cookie is first-party.
 - `noindex` meta + `robots.txt` disallow all.
+- `vercel.json` sends the security headers: a content security policy (`script-src 'self'`, API calls only to this site and `*.ayyararebirth.com`), one-year HSTS, no framing. Loading anything from a new host means adding it there.
+- The `/api` rewrite in `vercel.json` is for staging only and must be removed before launch (see the backend's `deploy/README.md`).
 
 ## Dashboard, reports and notifications
 

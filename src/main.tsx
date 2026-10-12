@@ -2,11 +2,16 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router/dom';
+import { z } from 'zod';
 import { router } from './app/router';
 import { Toaster } from './components/ui/Toast';
 import { sessionQueryKey } from './features/auth/session';
 import './index.css';
 import { ApiError } from './lib/api';
+
+// Zod speeds itself up by generating code at runtime, which the security policy
+// (script-src 'self', see vercel.json) forbids and reports. Forms here are small.
+z.config({ jitless: true });
 
 // Any 401 means the session ended (expired, revoked or user deactivated):
 // clear cached data and let the auth guard send the user to the login screen.
