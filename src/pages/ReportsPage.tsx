@@ -228,35 +228,56 @@ function ReportBody({ report }: { report: Report }) {
         </Panel>
       ) : null}
 
-      <Panel>
-        <PanelHeader icon={CalendarDays} title="Period details" />
-        <div className="max-h-96 overflow-auto">
-          <table className="w-full min-w-[36rem] text-sm">
-            <thead className="sticky top-0 bg-surface">
-              <tr className="border-b border-border text-left text-xs text-fg-subtle">
-                <th className="px-5 py-2.5 font-medium">Period</th>
-                <th className="px-3 py-2.5 text-right font-medium">Orders</th>
-                <th className="px-3 py-2.5 text-right font-medium">Sales</th>
-                <th className="px-3 py-2.5 text-right font-medium">Refunds</th>
-                <th className="px-3 py-2.5 text-right font-medium">Sold</th>
-                <th className="px-5 py-2.5 text-right font-medium">Received</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {report.timeseries.map((row) => (
-                <tr key={row.period}>
-                  <td className="px-5 py-2">{periodLabel(row.period, report.groupBy)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.orders}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatPaise(row.salesPaise)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.refundsPaise ? `−${formatPaise(row.refundsPaise)}` : '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{row.unitsSold}</td>
-                  <td className="px-5 py-2 text-right tabular-nums">{row.unitsReceived}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+      <PeriodDetails report={report} />
     </>
+  );
+}
+
+/** Table of the period's days (or weeks / months). Quiet ones are left out; the chart above still shows them. */
+function PeriodDetails({ report }: { report: Report }) {
+  // The chart needs every day, including quiet ones; the table lists only periods where something happened.
+  const activePeriods = report.timeseries.filter((row) => row.orders > 0 || row.salesPaise !== 0 || row.refundsPaise !== 0 || row.unitsSold !== 0 || row.unitsReceived !== 0);
+  const hiddenPeriods = report.timeseries.length - activePeriods.length;
+  const unit = report.groupBy;
+
+  return (
+    <Panel>
+      <PanelHeader
+        icon={CalendarDays}
+        title="Period details"
+        description={
+          hiddenPeriods > 0
+            ? `Only ${unit}s with activity are listed. ${hiddenPeriods} ${unit}${hiddenPeriods === 1 ? '' : 's'} with nothing sold, refunded or received ${hiddenPeriods === 1 ? 'is' : 'are'} hidden.`
+            : undefined
+        }
+      />
+      {activePeriods.length === 0 && <p className="px-5 py-8 text-center text-xs text-gray-500">Nothing was sold, refunded or received in this period.</p>}
+      <div className={activePeriods.length === 0 ? 'hidden' : 'max-h-96 overflow-auto'}>
+        <table className="w-full min-w-[36rem] text-sm">
+          <thead className="sticky top-0 bg-surface">
+            <tr className="border-b border-border text-left text-xs text-fg-subtle">
+              <th className="px-5 py-2.5 font-medium">Period</th>
+              <th className="px-3 py-2.5 text-right font-medium">Orders</th>
+              <th className="px-3 py-2.5 text-right font-medium">Sales</th>
+              <th className="px-3 py-2.5 text-right font-medium">Refunds</th>
+              <th className="px-3 py-2.5 text-right font-medium">Sold</th>
+              <th className="px-5 py-2.5 text-right font-medium">Received</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {activePeriods.map((row) => (
+              <tr key={row.period}>
+                <td className="px-5 py-2">{periodLabel(row.period, report.groupBy)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.orders}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatPaise(row.salesPaise)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.refundsPaise ? `−${formatPaise(row.refundsPaise)}` : '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.unitsSold}</td>
+                <td className="px-5 py-2 text-right tabular-nums">{row.unitsReceived}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }

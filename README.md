@@ -39,6 +39,21 @@ Implemented: login, forced password change for temporary passwords, Users & Perm
 - **Notifications** (`/notifications`) lets staff switch each customer email on or off, preview it, see the delivery log and resend failed emails.
 - Charts use Recharts: a sales trend area chart, an online vs offline pie and a sales-by-perfume bar chart, using the `CHART_COLORS` order in `src/features/reports/charts.tsx`. The trend chart has a table view.
 
+## Alerts on this device
+
+Account & security has an **Alerts** card (`features/push/DeviceAlerts.tsx`) where each person switches notifications on for the phone or laptop they are using and sends a test. `public/push-sw.js` is pulled into the generated service worker (`workbox.importScripts`) to show the notification and open the right page when it is tapped. It only works in a built admin, not under `npm run dev`, and on iPhone only after Add to Home Screen.
+
+## Order lists and invoices
+
+Online Orders and Offline Orders share `features/orders/OrdersTable`: columns for order, customer, items, status, total and invoice on wide screens, a card per order on phones. `InvoiceButton` (`features/orders/invoice.tsx`) downloads the PDF; it appears in each row, in the order panel, and on the "Order saved" screen after billing an offline order.
+
+## Accounts and salaries
+
+- **Accounts** (`/accounts`, `accounts.view`): a card per bank account plus "Cash in hand" with its balance, period totals (online, offline, other money in, expenses, salaries) and the selected account's statement with a running balance. Actions (`accounts.manage`): Money out, Money in, Transfer, Deposit to bank, Match with bank, cancel an entry. Only the owner adds accounts or changes an opening balance.
+- **Salaries** (`/salaries`): employees with this month's status, and Pay salary / Advance / Bonus. Paying a salary can take back part of an advance.
+- Code is in `src/features/accounts`. Every mutation invalidates the `['finance']` queries, so balances, statements and totals refresh together.
+- `formatPaise` shows whole rupees without decimals and anything else with both paise digits.
+
 ## Style guide
 
 - Canvas `#f9fafb`, text `#0a0a0a`, Inter. Numbers, money and codes use `font-mono`.

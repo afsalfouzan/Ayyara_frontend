@@ -1,9 +1,10 @@
-const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2, minimumFractionDigits: 0 });
+const whole = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const withPaise = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Money is integer paise everywhere; format only at the edge. */
+/** Money is integer paise everywhere; format only at the edge. Whole rupees show no decimals; anything else shows both paise digits (₹2,750.50, never ₹2,750.5). */
 export function formatPaise(paise: number | null | undefined) {
   if (paise == null) return '—';
-  return inr.format(paise / 100);
+  return (paise % 100 === 0 ? whole : withPaise).format(paise / 100);
 }
 
 /** "4,500.50" → 450050. Returns null for empty input and NaN for invalid input. */

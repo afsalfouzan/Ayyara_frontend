@@ -3,6 +3,7 @@ import {
   Bell,
   Boxes,
   CreditCard,
+  Landmark,
   LayoutDashboard,
   type LucideIcon,
   ReceiptText,
@@ -12,6 +13,7 @@ import {
   ShieldCheck,
   Store,
   Users,
+  Wallet,
 } from 'lucide-react';
 import type { Permission } from '@/lib/permissions';
 
@@ -121,6 +123,29 @@ export const navigation: NavGroup[] = [
           'Retry-safe: duplicate requests are blocked',
         ],
         phase: 5,
+      },
+    ],
+  },
+  {
+    label: 'Money',
+    items: [
+      {
+        path: '/accounts',
+        label: 'Accounts',
+        icon: Landmark,
+        permission: 'accounts.view',
+        description: 'Bank and cash balances, with every rupee in and out.',
+        capabilities: [],
+        phase: 8,
+      },
+      {
+        path: '/salaries',
+        label: 'Salaries',
+        icon: Wallet,
+        permission: 'accounts.view',
+        description: 'Staff salaries, advances and bonuses.',
+        capabilities: [],
+        phase: 8,
       },
     ],
   },

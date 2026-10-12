@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 import { DatePicker } from '@/components/ui/DatePicker';
-import { Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { controlClass, FormField, Select, Switch, TextArea } from '@/components/ui/controls';
@@ -10,6 +10,7 @@ import { useStock, type Perfume } from '@/features/stock/api';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
 import { INDIAN_STATES } from '@/lib/states';
+import { InvoiceButton } from './invoice';
 import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCreateOfflineOrder, type OfflineMethod, type OrderDetail } from './api';
 
 type Row = { key: string; perfumeId: string; variantId: string; quantity: string; price: string };
@@ -29,6 +30,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   const create = useCreateOfflineOrder();
   const perfumes: Perfume[] = stock.data?.items ?? [];
   // One id per form: a double-click or retry creates one order.
+  const [saved, setSaved] = useState<OrderDetail | null>(null);
   const [requestId] = useState(() => crypto.randomUUID());
   const [saleDate, setSaleDate] = useState(today);
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
@@ -86,8 +88,8 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
         note: note.trim(),
       });
       toast(`Offline order ${order.orderNumber} saved`);
-      onCreated(order);
-      onDone();
+      // Stay on a "saved" screen so the bill can be downloaded and handed over straight away.
+      setSaved(order);
     } catch (error) {
       const fieldErrors = fieldErrorsOf(error);
       const mapped: Record<string, string> = {};
@@ -99,6 +101,38 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       if (Object.keys(mapped).length) setErrors(mapped);
       else toast(messageOf(error), 'error');
     }
+  }
+
+  if (saved) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col items-center py-6 text-center">
+        <span className="grid size-12 place-items-center rounded-full bg-emerald-50 text-emerald-600">
+          <CheckCircle2 className="size-6" aria-hidden />
+        </span>
+        <h3 className="mt-4 text-base font-bold text-neutral-900">Order saved</h3>
+        <p className="mt-1 font-mono text-sm font-bold">{saved.orderNumber}</p>
+        <p className="mt-1 text-xs text-gray-500">
+          {saved.customerName} · <span className="font-mono font-bold text-neutral-900">{formatPaise(saved.totalPaise)}</span> · {saved.paymentStatus === 'paid' ? 'Paid' : 'Not paid yet'}
+        </p>
+        <div className="mt-6 flex w-full flex-col gap-2">
+          <InvoiceButton order={saved} variant="primary" size="md" label="Download invoice (PDF)" className="w-full" />
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => {
+              onCreated(saved);
+              onDone();
+            }}
+          >
+            View order
+          </Button>
+          <Button variant="ghost" className="w-full" onClick={onDone}>
+            Done
+          </Button>
+        </div>
+        <p className="mt-4 text-[11px] text-gray-500">You can download the invoice again any time from the Offline Orders list.</p>
+      </div>
+    );
   }
 
   return (

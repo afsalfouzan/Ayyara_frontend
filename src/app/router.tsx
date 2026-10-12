@@ -20,6 +20,8 @@ const implemented: Record<string, () => Promise<{ default: ComponentType }>> = {
   '/settings': () => import('@/pages/SettingsPage'),
   '/reports': () => import('@/pages/ReportsPage'),
   '/notifications': () => import('@/pages/NotificationsPage'),
+  '/accounts': () => import('@/pages/AccountsPage'),
+  '/salaries': () => import('@/pages/SalariesPage'),
 };
 
 

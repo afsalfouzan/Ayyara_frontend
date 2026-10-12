@@ -4,6 +4,7 @@ import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { toast } from '@/components/ui/Toast';
 import { ChangePasswordForm } from '@/features/account/ChangePasswordForm';
 import { useSession } from '@/features/auth/session';
+import { DeviceAlerts } from '@/features/push/DeviceAlerts';
 
 export default function AccountPage() {
   const { user } = useSession();
@@ -40,6 +41,10 @@ export default function AccountPage() {
           <div className="p-5">
             <ChangePasswordForm onSuccess={() => toast('Password updated. Other devices have been signed out.')} />
           </div>
+        </Panel>
+        <Panel className="lg:col-span-2">
+          <PanelHeader title="Alerts" />
+          <DeviceAlerts />
         </Panel>
       </div>
     </div>

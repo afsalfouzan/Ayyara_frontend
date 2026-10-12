@@ -211,6 +211,7 @@ export function DateRangePicker({
             onClick={() => (open ? hide() : openPicker())}
             aria-label={`${label}: ${text}`}
             aria-expanded={open}
+            data-field
             className={clsx(controlClass, 'inline-flex w-full items-center gap-2 text-left', open && 'border-neutral-900', clearable && hasValue && 'pr-8')}
           >
             <CalendarDays className="size-4 shrink-0 text-gray-500" aria-hidden />
@@ -290,6 +291,7 @@ export function DatePicker({ value, onChange, max, min, label = 'Date', id, clas
         }}
         aria-label={`${label}: ${value ? formatDay(value) : 'not set'}`}
         aria-expanded={open}
+        data-field
         className={clsx(controlClass, 'inline-flex items-center gap-2 text-left', open && 'border-neutral-900', className)}
       >
         <CalendarDays className="size-4 shrink-0 text-gray-500" aria-hidden />

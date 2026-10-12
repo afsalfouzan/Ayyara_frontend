@@ -131,7 +131,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-*:focus-visible {
+/*
+ * Keyboard focus ring for buttons, links, tabs and rows. Text fields,
+ * dropdowns and date fields (marked `data-field`) are left out: they show focus by turning their own border black,
+ * and a second ring around that reads as a doubled outline.
+ */
+*:focus-visible:not(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']), textarea, select, [role='combobox'], [data-field]) {
   outline: 2px solid #0a0a0a;
   outline-offset: 2px;
 }

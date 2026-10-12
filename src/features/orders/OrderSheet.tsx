@@ -15,6 +15,7 @@ import { formatPaise } from '@/lib/money';
 import { methodLabel, PAYMENT_STATUS_LABEL, REFUND_STATUS_LABEL, STOCK_ACTION_LABEL, useCreateRefund, useSyncRefund } from '@/features/payments/api';
 import { paiseToInput, parseRupees } from '@/lib/money';
 import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useOrder, useRecordOfflinePayment, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
+import { InvoiceButton } from './invoice';
 import { FULFILMENT_LABEL, HISTORY_LABEL, OrderStateBadge, PAYMENT_LABEL } from './labels';
 
 export function OrderSheet({ orderId, onClose }: { orderId: number | null; onClose: () => void }) {
@@ -61,6 +62,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
         <OrderStateBadge order={order} />
         {/* The state badge already says paid / awaiting payment; only add refund information. */}
         {(order.paymentStatus === 'refunded' || order.paymentStatus === 'partially_refunded') && <Badge tone="warning">{PAYMENT_LABEL[order.paymentStatus]}</Badge>}
+        <InvoiceButton order={order} label="Download invoice" className="ml-auto" />
       </div>
 
       {order.status === 'pending_payment' && order.reservationExpiresAt && (

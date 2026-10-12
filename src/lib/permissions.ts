@@ -20,6 +20,8 @@ export const PERMISSIONS = [
   'payments.view',
   'refunds.view',
   'refunds.create',
+  'accounts.view',
+  'accounts.manage',
   'reports.view',
   'reports.view_financial',
   'reports.export',

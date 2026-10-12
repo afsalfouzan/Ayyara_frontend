@@ -38,6 +38,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [{ urlPattern: ({ url }) => url.pathname.includes('/api/'), handler: 'NetworkOnly' }],
         cleanupOutdatedCaches: true,
+        // Phone / laptop alerts: shows push messages and handles taps (public/push-sw.js).
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

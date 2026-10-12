@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/ui/DataState';
 import { ACCENTS } from '@/components/ui/accents';
 import { ModuleCard, Panel, SectionCard } from '@/components/ui/Panel';
 import { KpiCard } from '@/components/ui/StatTile';
+import { BalanceStrip } from '@/features/accounts/BalanceStrip';
 import { useSession } from '@/features/auth/session';
 import { OrderStateBadge } from '@/features/orders/labels';
 import { useDashboard, type Attention, type Report } from '@/features/reports/api';
@@ -83,6 +84,8 @@ export default function DashboardPage() {
           </button>
         </div>
       </section>
+
+      {can('accounts.view') && <BalanceStrip />}
 
       {query.error && !query.data ? (
         <Panel>

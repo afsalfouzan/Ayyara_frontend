@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /**
  * Anchored popover built on the native Popover API: it renders in the top
  * layer (above dialogs, never clipped by scrolling containers) and closes on
- * outside click or Escape. Position is fixed to the anchor and flips upward
- * when there is no room below.
+ * outside click or Escape. Position is fixed to the anchor: below it when
+ * there is room, above it when not, and otherwise shifted to stay on screen.
  */
 export function useAnchoredPopover<A extends HTMLElement>({ gap = 6, matchWidth = false }: { gap?: number; matchWidth?: boolean } = {}) {
   const anchorRef = useRef<A>(null);
@@ -21,10 +21,17 @@ export function useAnchoredPopover<A extends HTMLElement>({ gap = 6, matchWidth 
     const rect = anchor.getBoundingClientRect();
     if (matchWidth) popover.style.minWidth = `${rect.width}px`;
     const { offsetWidth: width, offsetHeight: height } = popover;
+    const margin = 8;
+    const lowest = window.innerHeight - height - margin;
     let top = rect.bottom + gap;
-    if (top + height > window.innerHeight - 8 && rect.top - gap - height > 8) top = rect.top - gap - height;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    popover.style.top = `${Math.max(8, top)}px`;
+    if (top > lowest) {
+      const above = rect.top - gap - height;
+      // No room below: go above if it fits there; otherwise slide up just far enough
+      // to stay fully on screen (covering the field is better than losing the last rows).
+      top = above >= margin ? above : lowest;
+    }
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+    popover.style.top = `${Math.max(margin, top)}px`;
     popover.style.left = `${left}px`;
   }, [gap, matchWidth]);
 
