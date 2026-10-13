@@ -39,6 +39,10 @@ Implemented: login, forced password change for temporary passwords, Users & Perm
 - **Notifications** (`/notifications`) lets staff switch each customer email on or off, preview it, see the delivery log and resend failed emails.
 - Charts use Recharts: a sales trend area chart, an online vs offline pie and a sales-by-perfume bar chart, using the `CHART_COLORS` order in `src/features/reports/charts.tsx`. The trend chart has a table view.
 
+## Messaging the customer on WhatsApp
+
+The order panel shows **Message the customer on WhatsApp** (`features/orders/WhatsAppActions.tsx`) for staff who can see contact details: **Send invoice** once the order has gone through and **Send dispatch update** once it is dispatched. The WhatsApp button is a plain `wa.me` link that opens the chat with the message typed in; **Copy** is for a laptop where WhatsApp Web is already open. Each use is noted in the order's timeline. Nothing is sent automatically.
+
 ## Alerts on this device
 
 Account & security has an **Alerts** card (`features/push/DeviceAlerts.tsx`) where each person switches notifications on for the phone or laptop they are using and sends a test. `public/push-sw.js` is pulled into the generated service worker (`workbox.importScripts`) to show the notification and open the right page when it is tapped. It only works in a built admin, not under `npm run dev`, and on iPhone only after Add to Home Screen.

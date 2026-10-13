@@ -46,7 +46,11 @@ export type OrderDetail = OrderSummary & {
   nextFulfilmentSteps: ('processing' | 'packed' | 'dispatched' | 'delivered')[];
   canCancel: boolean;
   canRecordPayment: boolean;
+  /** Ready-written WhatsApp messages for the customer; null for staff who can't see contact details. */
+  whatsapp: { invoice: WhatsAppMessage | null; dispatch: WhatsAppMessage | null } | null;
 };
+
+export type WhatsAppMessage = { text: string; url: string };
 
 export type OrderFilters = { channel?: Channel; view: OrderView; page: number; search: string; from: string; to: string };
 
@@ -109,3 +113,6 @@ export function useCreateOfflineOrder() {
     onSuccess: () => Promise.all(['orders', 'stock', 'customers', 'payments'].map((key) => queryClient.invalidateQueries({ queryKey: [key] }))),
   });
 }
+
+/** Notes in the order history that a WhatsApp message was opened or copied for the customer. */
+export const useNoteWhatsApp = (id: number) => useOrderMutation<{ kind: 'invoice' | 'dispatch'; via: 'whatsapp' | 'copy' }>(id, 'whatsapp-sent');

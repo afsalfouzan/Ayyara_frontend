@@ -16,6 +16,7 @@ import { methodLabel, PAYMENT_STATUS_LABEL, REFUND_STATUS_LABEL, STOCK_ACTION_LA
 import { paiseToInput, parseRupees } from '@/lib/money';
 import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useOrder, useRecordOfflinePayment, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
 import { InvoiceButton } from './invoice';
+import { WhatsAppActions } from './WhatsAppActions';
 import { FULFILMENT_LABEL, HISTORY_LABEL, OrderStateBadge, PAYMENT_LABEL } from './labels';
 
 export function OrderSheet({ orderId, onClose }: { orderId: number | null; onClose: () => void }) {
@@ -64,6 +65,8 @@ function OrderBody({ order }: { order: OrderDetail }) {
         {(order.paymentStatus === 'refunded' || order.paymentStatus === 'partially_refunded') && <Badge tone="warning">{PAYMENT_LABEL[order.paymentStatus]}</Badge>}
         <InvoiceButton order={order} label="Download invoice" className="ml-auto" />
       </div>
+
+      <WhatsAppActions order={order} />
 
       {order.status === 'pending_payment' && order.reservationExpiresAt && (
         <p className="rounded-lg bg-warning-bg px-3 py-2.5 text-sm text-warning">
