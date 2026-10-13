@@ -14,7 +14,7 @@ import { formatDateTime } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 import { methodLabel, PAYMENT_STATUS_LABEL, REFUND_STATUS_LABEL, STOCK_ACTION_LABEL, useCreateRefund, useSyncRefund } from '@/features/payments/api';
 import { paiseToInput, parseRupees } from '@/lib/money';
-import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useOrder, useRecordOfflinePayment, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
+import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useOrder, useRecordOfflinePayment, useSetCourierCharge, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
 import { InvoiceButton } from './invoice';
 import { WhatsAppActions } from './WhatsAppActions';
 import { FULFILMENT_LABEL, HISTORY_LABEL, OrderStateBadge, PAYMENT_LABEL } from './labels';
@@ -178,6 +178,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
           <p className="text-sm">
             {order.courier} · <span className="font-mono">{order.trackingNumber}</span>
           </p>
+          <CourierCharge order={order} />
         </section>
       )}
 
@@ -261,6 +262,7 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
   const fulfil = useUpdateFulfilment(order.id);
   const [courier, setCourier] = useState('');
   const [tracking, setTracking] = useState('');
+  const [charge, setCharge] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function submit(event: FormEvent) {
@@ -269,10 +271,12 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
     const next: Record<string, string> = {};
     if (!courier.trim()) next.courier = 'Enter the courier';
     if (!tracking.trim()) next.tracking = 'Enter the tracking number';
+    const chargePaise = charge.trim() ? parseRupees(charge) : null;
+    if (chargePaise != null && (Number.isNaN(chargePaise) || chargePaise < 0)) next.charge = 'Enter an amount';
     setErrors(next);
     if (Object.keys(next).length) return;
     try {
-      await fulfil.mutateAsync({ status: 'dispatched', courier: courier.trim(), trackingNumber: tracking.trim() });
+      await fulfil.mutateAsync({ status: 'dispatched', courier: courier.trim(), trackingNumber: tracking.trim(), ...(chargePaise != null ? { courierChargePaise: chargePaise } : {}) });
       toast(`Order ${order.orderNumber} dispatched`);
       onClose();
     } catch (err) {
@@ -294,6 +298,9 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
         <FormField label="Tracking number" htmlFor="tracking" error={errors.tracking}>
           <input id="tracking" className={`${controlClass} w-full font-mono`} value={tracking} onChange={(e) => setTracking(e.target.value)} />
         </FormField>
+        <FormField label="Courier charge (₹)" htmlFor="courier-charge" error={errors.charge} hint="What you paid to send this parcel. The customer doesn’t see it. You can add it later if you don’t know it yet.">
+          <input id="courier-charge" inputMode="decimal" placeholder="Optional" className={`${controlClass} w-full`} value={charge} onChange={(e) => setCharge(e.target.value)} />
+        </FormField>
         <div className="flex justify-end gap-2 border-t border-border pt-4">
           <Button variant="secondary" onClick={onClose}>
             Cancel
@@ -304,6 +311,67 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** What the shop paid the courier, shown under the tracking details; staff who dispatch orders can add or change it. */
+function CourierCharge({ order }: { order: OrderDetail }) {
+  const { can } = useSession();
+  const save = useSetCourierCharge(order.id);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const canEdit = can('orders.update_fulfilment');
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const paise = value.trim() ? parseRupees(value) : null;
+    if (paise != null && (Number.isNaN(paise) || paise < 0)) return setError('Enter an amount');
+    try {
+      await save.mutateAsync(paise);
+      toast(paise == null ? 'Courier charge removed' : 'Courier charge saved');
+      setEditing(false);
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  }
+
+  if (editing) {
+    return (
+      <form onSubmit={submit} className="mt-2 flex flex-wrap items-start gap-2">
+        <div>
+          <input aria-label="Courier charge in rupees" inputMode="decimal" placeholder="Amount (₹)" className={`${controlClass} w-36`} value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+          {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+        </div>
+        <Button type="submit" size="sm" loading={save.isPending}>
+          Save
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+      </form>
+    );
+  }
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-fg-muted">
+      <span>
+        Courier charge: <span className="font-medium text-fg tabular-nums">{order.courierChargePaise != null ? formatPaise(order.courierChargePaise) : 'not entered'}</span>
+      </span>
+      {canEdit && (
+        <button
+          type="button"
+          className="text-xs font-semibold text-neutral-900 underline underline-offset-2"
+          onClick={() => {
+            setValue(order.courierChargePaise != null ? paiseToInput(order.courierChargePaise) : '');
+            setError('');
+            setEditing(true);
+          }}
+        >
+          {order.courierChargePaise != null ? 'Change' : 'Add'}
+        </button>
+      )}
+    </p>
   );
 }
 

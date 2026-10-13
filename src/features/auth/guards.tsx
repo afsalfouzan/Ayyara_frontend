@@ -32,7 +32,7 @@ export function RequireAuth() {
 }
 
 /** UI-level gate. The backend independently rejects any request lacking the permission. */
-export function RequirePermission({ permission, children }: { permission: Permission; children: ReactNode }) {
-  const { can } = useSession();
-  return can(permission) ? children : <ForbiddenPage />;
+export function RequirePermission({ permission, ownerOnly, children }: { permission: Permission; ownerOnly?: boolean; children: ReactNode }) {
+  const { can, user } = useSession();
+  return (ownerOnly ? Boolean(user?.isOwner) : can(permission)) ? children : <ForbiddenPage />;
 }

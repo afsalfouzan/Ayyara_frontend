@@ -12,6 +12,7 @@ import {
   Settings,
   ShieldCheck,
   Store,
+  TrendingUp,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -22,6 +23,8 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   permission: Permission;
+  /** Shown to the owner only; no permission can open it for anyone else. */
+  ownerOnly?: boolean;
   description: string;
   /** What the module will do, shown on its page until it is implemented. */
   capabilities: string[];
@@ -146,6 +149,16 @@ export const navigation: NavGroup[] = [
         description: 'Staff salaries, advances and bonuses.',
         capabilities: [],
         phase: 8,
+      },
+      {
+        path: '/profit',
+        label: 'Profit & Investment',
+        icon: TrendingUp,
+        permission: 'accounts.view',
+        ownerOnly: true,
+        description: 'Daily profit, and how much of your investment it has earned back.',
+        capabilities: [],
+        phase: 9,
       },
     ],
   },

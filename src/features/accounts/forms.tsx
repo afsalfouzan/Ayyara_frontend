@@ -169,7 +169,7 @@ function EntryForm({ state, accounts, categories, today, onDone }: { state: NonN
         </FormField>
       </div>
       <FormField label="Description" htmlFor="entry-description" error={errors.description} hint="Shown in the statement, so write it the way you’ll recognise it later.">
-        <input id="entry-description" className={`${controlClass} w-full`} maxLength={160} placeholder={out ? 'e.g. DTDC courier bill for September' : 'e.g. Owner added funds'} value={description} onChange={(event) => setDescription(event.target.value)} />
+        <input id="entry-description" className={`${controlClass} w-full`} maxLength={160} placeholder={out ? 'e.g. Shop rent for October' : 'e.g. Owner added funds'} value={description} onChange={(event) => setDescription(event.target.value)} />
       </FormField>
       {account && signed !== 0 && <BalancePreview label={`${account.name} balance`} before={account.balancePaise} after={account.balancePaise + signed} />}
       <Actions onCancel={onDone} saving={add.isPending} label={out ? 'Save money out' : 'Save money in'} />

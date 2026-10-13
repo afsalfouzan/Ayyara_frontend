@@ -5,13 +5,13 @@ import { useSession } from '@/features/auth/session';
 
 /** Navigation list shared by the desktop sidebar and the mobile drawer. */
 export function SidebarNav({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
-  const { can } = useSession();
+  const { can, user } = useSession();
 
   return (
     <nav aria-label="Main" className="flex-1 overflow-y-auto overscroll-contain px-3 py-4">
       {navigation.map((group) => {
         // Hiding items is a convenience only — every page and API call is permission-checked server-side.
-        const items = group.items.filter((item) => can(item.permission));
+        const items = group.items.filter((item) => (item.ownerOnly ? Boolean(user?.isOwner) : can(item.permission)));
         if (items.length === 0) return null;
         return (
           <div key={group.label} className="mb-5 last:mb-0">

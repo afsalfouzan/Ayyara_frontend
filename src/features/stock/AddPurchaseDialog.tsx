@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { useSession } from '@/features/auth/session';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
-import { paiseToInput, parseRupees } from '@/lib/money';
+import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
 import { useAddPurchase, type Perfume, type PurchaseItemInput } from './api';
 
 const PRESET_SIZES = [30, 50, 60, 100];
@@ -27,11 +27,13 @@ type Row = {
   size: string; // ml or ''
   quantity: string;
   cost: string;
+  /** Whether `cost` is the price of one bottle or of the whole line. */
+  costMode: 'unit' | 'total';
 };
 
 type Creating = { kind: 'perfume'; rowKey: string } | { kind: 'size'; rowKey: string; perfumeRef: string } | null;
 
-const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfume: '', size: '', quantity: '', cost: '' });
+const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfume: '', size: '', quantity: '', cost: '', costMode: 'unit' });
 const today = () => new Date().toLocaleDateString('en-CA');
 const isPending = (ref: string) => ref.startsWith('new:');
 
@@ -91,7 +93,9 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
       if (!row.perfume) next[`${i}.perfume`] = 'Choose a perfume';
       else if (!row.size || !sizeOf(row)) next[`${i}.size`] = 'Choose a size';
       if (!/^\d+$/.test(row.quantity) || Number(row.quantity) < 1) next[`${i}.quantity`] = 'Enter quantity';
-      if (canCost && row.cost && Number.isNaN(parseRupees(row.cost))) next[`${i}.cost`] = 'Invalid amount';
+      const cost = parseRupees(row.cost);
+      if (cost == null || Number.isNaN(cost) || cost < 1) next[`${i}.cost`] = 'Enter the cost';
+      else if (row.costMode === 'total' && Number(row.quantity) >= 1 && Math.round(cost / Number(row.quantity)) < 1) next[`${i}.cost`] = 'Too small for this quantity';
     });
     const combos = rows.filter((r) => r.perfume && r.size).map((r) => `${r.perfume}|${r.size}`);
     rows.forEach((row, i) => {
@@ -107,7 +111,7 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
         quantity: Number(row.quantity),
         // Prices are only sent for sizes created in this form; existing sizes keep their catalogue prices.
         ...(size.isNew ? { mrpPaise: size.mrpPaise, pricePaise: size.pricePaise } : {}),
-        ...(canCost && row.cost ? { unitCostPaise: parseRupees(row.cost) } : {}),
+        ...(row.costMode === 'total' ? { totalCostPaise: parseRupees(row.cost)! } : { unitCostPaise: parseRupees(row.cost)! }),
       };
       if (isPending(row.perfume)) {
         const perfume = pendingPerfumes.find((p) => p.ref === row.perfume)!;
@@ -126,7 +130,7 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
       for (const [key, message] of Object.entries(fieldErrors)) {
         const match = /^items\.(\d+)\.(\w+)/.exec(key);
         if (!match) continue;
-        const field = { mrpPaise: 'size', pricePaise: 'size', sizeMl: 'size', newProduct: 'perfume', productId: 'perfume', unitCostPaise: 'cost' }[match[2]!] ?? match[2]!;
+        const field = { mrpPaise: 'size', pricePaise: 'size', sizeMl: 'size', newProduct: 'perfume', productId: 'perfume', unitCostPaise: 'cost', totalCostPaise: 'cost' }[match[2]!] ?? match[2]!;
         mapped[`${match[1]}.${field}`] = message;
       }
       if (Object.keys(mapped).length) setErrors(mapped);
@@ -136,8 +140,38 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
 
   const err = (i: number, field: string) => errors[`${i}.${field}`];
   const totalUnits = rows.reduce((total, row) => total + (/^\d+$/.test(row.quantity) ? Number(row.quantity) : 0), 0);
-  const grid = canCost ? 'lg:grid-cols-[minmax(11rem,1.5fr)_9.5rem_5.5rem_6.5rem_6.5rem_7rem_2.5rem]' : 'lg:grid-cols-[minmax(11rem,1.5fr)_9.5rem_5.5rem_6.5rem_6.5rem_2.5rem]';
+  const grid = 'lg:grid-cols-[minmax(10rem,1.5fr)_8.5rem_5rem_6rem_6rem_13.5rem_2.5rem]';
+
+  /** The other way of reading the cost a row holds: the total for a per-bottle cost, and the reverse. */
+  function costHint(row: Row) {
+    const cost = parseRupees(row.cost);
+    const quantity = Number(row.quantity);
+    if (cost == null || Number.isNaN(cost) || cost < 1 || !/^\d+$/.test(row.quantity) || quantity < 1) return null;
+    return row.costMode === 'total' ? `${formatPaise(Math.round(cost / quantity))} per bottle` : `${formatPaise(cost * quantity)} in total`;
+  }
+  const totalCost = rows.reduce((total, row) => {
+    const cost = parseRupees(row.cost);
+    const quantity = /^\d+$/.test(row.quantity) ? Number(row.quantity) : 0;
+    if (cost == null || Number.isNaN(cost) || !quantity) return total;
+    return total + (row.costMode === 'total' ? cost : cost * quantity);
+  }, 0);
   const allPerfumeNames = [...perfumes.map((p) => p.name), ...pendingPerfumes.map((p) => p.name)];
+
+  // Every bottle needs a cost, and costs are confidential.
+  if (!canCost) {
+    return (
+      <div className="space-y-5">
+        <p className="rounded-lg border border-warning/30 bg-warning-bg px-4 py-3 text-sm text-warning">
+          Adding stock needs the cost of each bottle, and you don’t have permission to enter purchase costs. Ask the owner to switch on “See purchase prices and unit costs” for you.
+        </p>
+        <div className="flex justify-end border-t border-border pt-5">
+          <Button variant="secondary" onClick={onDone}>
+            Close
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -161,7 +195,7 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
           <span>Quantity</span>
           <span>MRP (₹)</span>
           <span>Selling (₹)</span>
-          {canCost && <span>Cost / unit (₹)</span>}
+          <span>Cost (₹)</span>
           <span />
         </div>
 
@@ -225,11 +259,16 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
                   <Cell label="Selling (₹)">
                     <LockedPrice label="Selling price" value={size?.pricePaise} />
                   </Cell>
-                  {canCost && (
-                    <Cell label="Cost / unit (₹)" error={err(i, 'cost')}>
-                      <input aria-label="Cost per unit" inputMode="decimal" placeholder="Optional" className={`${controlClass} w-full`} value={row.cost} onChange={(e) => update(row.key, { cost: e.target.value })} />
-                    </Cell>
-                  )}
+                  <Cell label="Cost (₹)" error={err(i, 'cost')} className="col-span-2 lg:col-span-1">
+                    <div className="flex gap-2">
+                      <input aria-label="Cost" inputMode="decimal" className={`${controlClass} w-full min-w-0`} value={row.cost} onChange={(e) => update(row.key, { cost: e.target.value })} />
+                      <Select aria-label="Cost is per bottle or for the whole line" className="w-28 shrink-0" value={row.costMode} onChange={(e) => update(row.key, { costMode: e.target.value as Row['costMode'] })}>
+                        <option value="unit">Per bottle</option>
+                        <option value="total">Total</option>
+                      </Select>
+                    </div>
+                    {costHint(row) && <p className="mt-1 text-xs text-fg-subtle">{costHint(row)}</p>}
+                  </Cell>
                   <div className="col-span-2 flex justify-end lg:col-span-1">
                     <Button variant="ghost" aria-label="Remove row" disabled={rows.length === 1} onClick={() => setRows((current) => current.filter((r) => r.key !== row.key))}>
                       <Trash2 className="size-4" aria-hidden />
@@ -241,7 +280,9 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
           })}
         </ul>
 
-        <p className="mt-2 px-1 text-xs text-fg-subtle">MRP and selling price come from the Stock page. To change them, use Edit on that perfume.</p>
+        <p className="mt-2 px-1 text-xs text-fg-subtle">
+          MRP and selling price come from the Stock page. To change them, use Edit on that perfume. The cost is what you paid: for one bottle, or for the whole line. Profit is worked out from it.
+        </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <Button variant="secondary" size="sm" onClick={() => setRows((current) => [...current, emptyRow()])} disabled={rows.length >= 50}>
@@ -250,6 +291,11 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
           </Button>
           <p className="text-sm text-fg-muted">
             Total <strong className="text-fg tabular-nums">{totalUnits}</strong> units
+            {totalCost > 0 && (
+              <>
+                {' · '}cost <strong className="text-fg tabular-nums">{formatPaise(totalCost)}</strong>
+              </>
+            )}
           </p>
         </div>
       </div>

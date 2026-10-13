@@ -22,15 +22,16 @@ const implemented: Record<string, () => Promise<{ default: ComponentType }>> = {
   '/notifications': () => import('@/pages/NotificationsPage'),
   '/accounts': () => import('@/pages/AccountsPage'),
   '/salaries': () => import('@/pages/SalariesPage'),
+  '/profit': () => import('@/pages/ProfitPage'),
 };
 
 
-function guarded(permission: Permission, load: () => Promise<{ default: ComponentType }>): RouteObject['lazy'] {
+function guarded(permission: Permission, load: () => Promise<{ default: ComponentType }>, ownerOnly?: boolean): RouteObject['lazy'] {
   return async () => {
     const { default: Page } = await load();
     return {
       Component: () => (
-        <RequirePermission permission={permission}>
+        <RequirePermission permission={permission} ownerOnly={ownerOnly}>
           <Page />
         </RequirePermission>
       ),
@@ -40,7 +41,7 @@ function guarded(permission: Permission, load: () => Promise<{ default: Componen
 
 const moduleRoutes: RouteObject[] = navItems.map((item) => {
   const load = implemented[item.path] ?? (() => import('@/pages/ModulePage'));
-  const lazy = guarded(item.permission, load);
+  const lazy = guarded(item.permission, load, item.ownerOnly);
   return item.path === '/' ? { index: true, lazy } : { path: item.path.slice(1), lazy };
 });
 

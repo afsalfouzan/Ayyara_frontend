@@ -46,7 +46,9 @@ export type PurchaseItemInput = {
   quantity: number;
   mrpPaise?: number;
   pricePaise?: number;
-  unitCostPaise?: number | null;
+  /** What the bottles cost: per bottle, or for the whole line. Exactly one is sent. */
+  unitCostPaise?: number;
+  totalCostPaise?: number;
 };
 
 export type HistoryEntry = { id: number; type: 'purchase' | 'sale' | 'return' | 'adjustment' | 'cancellation'; quantity: number; balanceAfter: number; reason: string | null; createdBy: string | null; createdAt: string };

@@ -29,6 +29,8 @@ export type OrderSummary = {
   reservationExpiresAt: string | null;
   courier: string | null;
   trackingNumber: string | null;
+  /** What the shop paid the courier for this parcel; null until someone enters it. */
+  courierChargePaise: number | null;
   createdAt: string;
   paidAt: string | null;
   customerNotes: string;
@@ -86,7 +88,19 @@ function useOrderMutation<TInput>(id: number, path: string) {
   });
 }
 
-export const useUpdateFulfilment = (id: number) => useOrderMutation<{ status: string; courier?: string; trackingNumber?: string; note?: string }>(id, 'fulfilment');
+export const useUpdateFulfilment = (id: number) => useOrderMutation<{ status: string; courier?: string; trackingNumber?: string; courierChargePaise?: number; note?: string }>(id, 'fulfilment');
+
+/** Adds or corrects the courier charge after an order has been dispatched. */
+export function useSetCourierCharge(id: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (courierChargePaise: number | null) => api<{ order: OrderDetail }>(`/admin/orders/${id}/courier-charge`, { method: 'PUT', body: { courierChargePaise } }).then((d) => d.order),
+    onSuccess: (order) => {
+      queryClient.setQueryData(['orders', 'detail', id], order);
+      void queryClient.invalidateQueries({ queryKey: ['profit'] });
+    },
+  });
+}
 export const useCancelOrder = (id: number) => useOrderMutation<{ reason: string }>(id, 'cancel');
 
 export const useRecordOfflinePayment = (id: number) => useOrderMutation<{ method: OfflineMethod; reference?: string }>(id, 'offline-payment');
