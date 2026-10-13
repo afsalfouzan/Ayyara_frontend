@@ -17,10 +17,20 @@ export type PaymentRow = {
   createdAt: string;
 };
 
-export type PaymentFilters = { status: 'all' | 'successful' | 'failed' | 'refunded'; page: number; search: string; from: string; to: string };
+export type PaymentFilters = { channel: 'online' | 'offline'; status: 'all' | 'successful' | 'failed' | 'refunded'; page: number; search: string; from: string; to: string };
+
+/** The cards above the list. They follow the chosen dates, not the tab or the search. */
+export type PaymentSummary = {
+  online: { receivedPaise: number; count: number; failed: number };
+  offline: { receivedPaise: number; count: number; cashPaise: number; otherPaise: number };
+  refunded: { onlinePaise: number; offlinePaise: number };
+  awaitingPayment: number;
+  /** Money moving from Razorpay to the bank; null for staff who can't see the accounts. */
+  payouts: { onTheWayPaise: number; onTheWayCount: number; feesPaise: number; feesKnown: boolean; creditedPaise: number; payoutCount: number; lastPayoutAt: string | null } | null;
+};
 
 export function usePayments(filters: PaymentFilters) {
-  const params = new URLSearchParams({ status: filters.status, page: String(filters.page), pageSize: '25' });
+  const params = new URLSearchParams({ channel: filters.channel, status: filters.status, page: String(filters.page), pageSize: '25' });
   for (const key of ['search', 'from', 'to'] as const) if (filters[key]) params.set(key, filters[key]);
   return useQuery({
     queryKey: ['payments', filters],
@@ -30,7 +40,7 @@ export function usePayments(filters: PaymentFilters) {
         page: number;
         pageSize: number;
         total: number;
-        summary: { receivedPaise: number; successful: number; failed: number; refundedPaise: number; awaitingPayment: number };
+        summary: PaymentSummary;
         configured: { payments: boolean; webhook: boolean; mode: 'live' | 'test' | null };
       }>(`/admin/payments?${params}`),
     placeholderData: keepPreviousData,
