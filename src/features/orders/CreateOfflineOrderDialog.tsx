@@ -11,7 +11,7 @@ import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
 import { INDIAN_STATES } from '@/lib/states';
 import { InvoiceButton } from './invoice';
-import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCreateOfflineOrder, type OfflineMethod, type OrderDetail } from './api';
+import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, REGION_LABEL, useCreateOfflineOrder, type OfflineMethod, type OrderDetail, type SellingRegion } from './api';
 
 type Row = { key: string; perfumeId: string; variantId: string; quantity: string; price: string };
 const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfumeId: '', variantId: '', quantity: '1', price: '' });
@@ -19,7 +19,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 
 export function CreateOfflineOrderDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (order: OrderDetail) => void }) {
   return (
-    <Modal open={open} onClose={onClose} title="New offline order" description="A sale made in person or over the phone. Stock is deducted as soon as you save.">
+    <Modal open={open} onClose={onClose} title="New offline order" description="A sale made in person or over the phone, in India or in the UK.">
       {open && <OfflineOrderForm onDone={onClose} onCreated={onCreated} />}
     </Modal>
   );
@@ -33,6 +33,9 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   const [saved, setSaved] = useState<OrderDetail | null>(null);
   const [requestId] = useState(() => crypto.randomUUID());
   const [saleDate, setSaleDate] = useState(today);
+  // India is the usual case. A UK sale only records the rupee amount: no stock change, no price limit, no delivery.
+  const [region, setRegion] = useState<SellingRegion>('india');
+  const uk = region === 'uk';
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '' });
   const [delivery, setDelivery] = useState(false);
@@ -52,6 +55,15 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   };
   const total = rows.reduce((sum, row) => sum + lineTotal(row), 0);
 
+  function changeRegion(next: SellingRegion) {
+    if (next === region) return;
+    setRegion(next);
+    setErrors({});
+    if (next === 'uk') setDelivery(false);
+    // India prices come from Stock; a UK price is whatever it was sold for, so it starts empty.
+    setRows((current) => current.map((row) => ({ ...row, price: next === 'india' ? paiseToInput(variantOf(row)?.pricePaise ?? null) : '' })));
+  }
+
   async function submit() {
     const next: Record<string, string> = {};
     rows.forEach((row, i) => {
@@ -59,16 +71,18 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       if (!variant) next[`${i}.variant`] = 'Choose a perfume and size';
       const qty = Number(row.quantity);
       if (!/^\d+$/.test(row.quantity) || qty < 1) next[`${i}.quantity`] = 'Enter quantity';
-      else if (variant && qty > variant.stock.available) next[`${i}.quantity`] = `Only ${variant.stock.available} available`;
+      else if (!uk && variant && qty > variant.stock.available) next[`${i}.quantity`] = `Only ${variant.stock.available} available`;
       const price = parseRupees(row.price);
-      if (price == null || Number.isNaN(price) || price < 100) next[`${i}.price`] = 'Enter price';
-      else if (variant && price > variant.mrpPaise) next[`${i}.price`] = `Max MRP ${formatPaise(variant.mrpPaise)}`;
+      if (price == null || Number.isNaN(price) || price < 100) next[`${i}.price`] = uk ? 'Enter the sold price' : 'Enter price';
+      else if (!uk && variant && price > variant.mrpPaise) next[`${i}.price`] = `Max MRP ${formatPaise(variant.mrpPaise)}`;
     });
     if (new Set(rows.map((r) => r.variantId).filter(Boolean)).size !== rows.filter((r) => r.variantId).length) next.items = 'Each perfume and size can appear only once — combine the quantities';
     if (customer.name.trim().length < 2) next.name = 'Enter the customer’s name';
-    if (!/^[6-9]\d{9}$/.test(customer.phone.replace(/[\s-]/g, '').replace(/^(\+91|0)/, ''))) next.phone = 'Enter a 10-digit mobile number';
+    if (uk) {
+      if (customer.phone.trim() && !/^\+?\d{7,15}$/.test(customer.phone.replace(/[\s().-]/g, ''))) next.phone = 'Enter a valid phone number, or leave it empty';
+    } else if (!/^[6-9]\d{9}$/.test(customer.phone.replace(/[\s-]/g, '').replace(/^(\+91|0)/, ''))) next.phone = 'Enter a 10-digit mobile number';
     if (customer.email && !/^\S+@\S+\.\S+$/.test(customer.email)) next.email = 'Enter a valid email';
-    if (delivery) {
+    if (delivery && !uk) {
       if (address.addressLine1.trim().length < 5) next.addressLine1 = 'Enter house number and street';
       if (address.city.trim().length < 2) next.city = 'Enter the city';
       if (!address.state) next.state = 'Select the state';
@@ -80,14 +94,15 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
     try {
       const order = await create.mutateAsync({
         requestId,
+        region,
         saleDate,
         items: rows.map((row) => ({ variantId: Number(row.variantId), quantity: Number(row.quantity), unitPricePaise: parseRupees(row.price)! })),
-        customer: { name: customer.name.trim(), phone: customer.phone, ...(customer.email.trim() ? { email: customer.email.trim() } : {}) },
-        delivery: delivery ? { required: true, ...address } : { required: false },
+        customer: { name: customer.name.trim(), ...(customer.phone.trim() ? { phone: customer.phone.trim() } : {}), ...(customer.email.trim() ? { email: customer.email.trim() } : {}) },
+        delivery: delivery && !uk ? { required: true, ...address } : { required: false },
         payment: paid ? { status: 'paid', method, reference: reference.trim() } : { status: 'unpaid' },
         note: note.trim(),
       });
-      toast(`Offline order ${order.orderNumber} saved`);
+      toast(uk ? `UK sale ${order.orderNumber} saved` : `Offline order ${order.orderNumber} saved`);
       // Stay on a "saved" screen so the bill can be downloaded and handed over straight away.
       setSaved(order);
     } catch (error) {
@@ -109,7 +124,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
         <span className="grid size-12 place-items-center rounded-full bg-emerald-50 text-emerald-600">
           <CheckCircle2 className="size-6" aria-hidden />
         </span>
-        <h3 className="mt-4 text-base font-bold text-neutral-900">Order saved</h3>
+        <h3 className="mt-4 text-base font-bold text-neutral-900">{saved.sellingRegion === 'uk' ? 'UK sale saved' : 'Order saved'}</h3>
         <p className="mt-1 font-mono text-sm font-bold">{saved.orderNumber}</p>
         <p className="mt-1 text-xs text-gray-500">
           {saved.customerName} · <span className="font-mono font-bold text-neutral-900">{formatPaise(saved.totalPaise)}</span> · {saved.paymentStatus === 'paid' ? 'Paid' : 'Not paid yet'}
@@ -130,19 +145,39 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
             Done
           </Button>
         </div>
-        <p className="mt-4 text-[11px] text-gray-500">You can download the invoice again any time from the Offline Orders list.</p>
+        <p className="mt-4 text-[11px] text-gray-500">{saved.hasInvoice ? 'You can download the invoice again any time from the Offline Orders list.' : 'UK sales have no invoice, and godown stock was not changed.'}</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-7">
+      <Section title="Selling region">
+        <div role="radiogroup" aria-label="Selling region" className="grid grid-cols-2 gap-2 sm:max-w-sm">
+          {(['india', 'uk'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={region === value}
+              onClick={() => changeRegion(value)}
+              className={clsx('rounded-lg border px-3 py-2.5 text-sm font-medium', region === value ? 'border-fg bg-surface-muted text-fg' : 'border-border text-fg-muted hover:text-fg')}
+            >
+              {REGION_LABEL[value]}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-fg-muted">
+          {uk ? 'Type the amount it was sold for, in rupees. Godown stock is not changed, and no invoice or email is sent.' : 'Prices come from Stock, and the bottles are taken out of the godown when you save.'}
+        </p>
+      </Section>
+
       <Section title="Perfumes">
         <div className="mb-2 hidden grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem] gap-3 px-1 text-xs font-medium text-fg-subtle lg:grid">
           <span>Perfume</span>
           <span>Size</span>
           <span>Qty</span>
-          <span>Price each (₹)</span>
+          <span>{uk ? 'Sold price each (₹)' : 'Price each (₹)'}</span>
           <span className="text-right">Total</span>
           <span />
         </div>
@@ -171,14 +206,15 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
                     disabled={!perfume}
                     onChange={(e) => {
                       const v = perfume?.variants.find((x) => String(x.id) === e.target.value);
-                      // Prefill the selling price from Stock.
-                      update(row.key, { variantId: e.target.value, price: v ? paiseToInput(v.pricePaise) : '' });
+                      // India: prefill the selling price from Stock. UK: the sold price is typed by hand.
+                      update(row.key, { variantId: e.target.value, price: v && !uk ? paiseToInput(v.pricePaise) : '' });
                     }}
                   >
                     <option value="">Size…</option>
                     {perfume?.variants.map((v) => (
-                      <option key={v.id} value={v.id} disabled={v.stock.available <= 0}>
-                        {v.sizeMl} ML · {v.stock.available > 0 ? `${v.stock.available} available` : 'out of stock'}
+                      // UK bottles are not in the godown, so its stock count doesn't apply.
+                      <option key={v.id} value={v.id} disabled={!uk && v.stock.available <= 0}>
+                        {uk ? `${v.sizeMl} ML` : `${v.sizeMl} ML · ${v.stock.available > 0 ? `${v.stock.available} available` : 'out of stock'}`}
                       </option>
                     ))}
                   </Select>
@@ -186,9 +222,9 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
                 <Cell label="Qty" error={errors[`${i}.quantity`]}>
                   <input aria-label="Quantity" inputMode="numeric" className={`${controlClass} w-full`} value={row.quantity} onChange={(e) => update(row.key, { quantity: e.target.value.replace(/\D/g, '') })} />
                 </Cell>
-                <Cell label="Price each (₹)" error={errors[`${i}.price`]}>
-                  <input aria-label="Price each" inputMode="decimal" className={`${controlClass} w-full`} value={row.price} disabled={!variant} onChange={(e) => update(row.key, { price: e.target.value })} />
-                  {variant && <p className="mt-1 text-[0.6875rem] text-fg-subtle">MRP {formatPaise(variant.mrpPaise)}</p>}
+                <Cell label={uk ? 'Sold price each (₹)' : 'Price each (₹)'} error={errors[`${i}.price`]}>
+                  <input aria-label={uk ? 'Sold price each' : 'Price each'} inputMode="decimal" placeholder={uk ? 'Amount in ₹' : undefined} className={`${controlClass} w-full`} value={row.price} disabled={!variant} onChange={(e) => update(row.key, { price: e.target.value })} />
+                  {variant && !uk && <p className="mt-1 text-[0.6875rem] text-fg-subtle">MRP {formatPaise(variant.mrpPaise)}</p>}
                 </Cell>
                 <Cell label="Total" className="lg:text-right">
                   <p className="flex h-9 items-center text-sm font-medium tabular-nums lg:justify-end">{lineTotal(row) ? formatPaise(lineTotal(row)) : '—'}</p>
@@ -218,21 +254,21 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
           <FormField label="Name" htmlFor="oc-name" error={errors.name}>
             <input id="oc-name" className={`${controlClass} w-full`} value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
           </FormField>
-          <FormField label="Mobile number" htmlFor="oc-phone" error={errors.phone}>
+          <FormField label={uk ? 'Phone (optional)' : 'Mobile number'} htmlFor="oc-phone" error={errors.phone}>
             <input id="oc-phone" inputMode="tel" className={`${controlClass} w-full`} value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
           </FormField>
-          <FormField label="Email (optional)" htmlFor="oc-email" error={errors.email}>
+          <FormField label="Email (optional)" htmlFor="oc-email" error={errors.email} hint={uk ? 'Kept on the order. No email is sent for UK sales.' : undefined}>
             <input id="oc-email" type="email" className={`${controlClass} w-full`} value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} />
           </FormField>
         </div>
-        <div className="mt-4 flex items-center justify-between rounded-lg border border-border p-3">
+        <div className={clsx('mt-4 flex items-center justify-between rounded-lg border border-border p-3', uk && 'hidden')}>
           <div>
             <p className="text-sm font-medium">Needs delivery</p>
             <p className="text-xs text-fg-muted">{delivery ? 'The order will go through packing and dispatch.' : 'Handed over to the customer now.'}</p>
           </div>
           <Switch label="Needs delivery" checked={delivery} onChange={setDelivery} />
         </div>
-        {delivery && (
+        {delivery && !uk && (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <FormField label="House / flat, street" htmlFor="oc-line1" error={errors.addressLine1}>
@@ -313,7 +349,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       </Section>
 
       <FormField label="Note (optional)" htmlFor="oc-note">
-        <TextArea id="oc-note" rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Sold at the Kochi pop-up" />
+        <TextArea id="oc-note" rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder={uk ? 'e.g. Sold at the London market' : 'e.g. Sold at the Kochi pop-up'} />
       </FormField>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
@@ -326,7 +362,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
             Cancel
           </Button>
           <Button onClick={submit} loading={create.isPending}>
-            Save order · {formatPaise(total)}
+            {uk ? 'Save UK sale' : 'Save order'} · {formatPaise(total)}
           </Button>
         </div>
       </div>

@@ -6,6 +6,9 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partia
 export type FulfilmentStatus = 'unfulfilled' | 'processing' | 'packed' | 'dispatched' | 'delivered' | 'cancelled' | 'returned';
 export type OrderView = 'all' | 'awaiting_payment' | 'to_pack' | 'dispatched' | 'delivered' | 'closed' | 'unpaid' | 'paid' | 'cancelled';
 export type Channel = 'online' | 'offline';
+/** Where an offline sale was made. UK sales record the money only: no stock change, invoice, email or delivery. */
+export type SellingRegion = 'india' | 'uk';
+export const REGION_LABEL: Record<SellingRegion, string> = { india: 'India', uk: 'UK' };
 
 type Shipping = { city: string; state: string; pincode: string; name?: string; line1?: string; line2?: string };
 
@@ -13,6 +16,7 @@ export type OrderSummary = {
   id: number;
   orderNumber: string;
   channel: Channel;
+  sellingRegion: SellingRegion;
   deliveryRequired: boolean;
   customerId: number;
   customerName: string;
@@ -48,17 +52,20 @@ export type OrderDetail = OrderSummary & {
   nextFulfilmentSteps: ('processing' | 'packed' | 'dispatched' | 'delivered')[];
   canCancel: boolean;
   canRecordPayment: boolean;
+  /** False for UK sales, which have no invoice. */
+  hasInvoice: boolean;
   /** Ready-written WhatsApp messages for the customer; null for staff who can't see contact details. */
   whatsapp: { invoice: WhatsAppMessage | null; dispatch: WhatsAppMessage | null } | null;
 };
 
 export type WhatsAppMessage = { text: string; url: string };
 
-export type OrderFilters = { channel?: Channel; view: OrderView; page: number; search: string; from: string; to: string };
+export type OrderFilters = { channel?: Channel; region?: SellingRegion | 'all'; view: OrderView; page: number; search: string; from: string; to: string };
 
 export function useOrders(filters: OrderFilters) {
   const params = new URLSearchParams({ channel: filters.channel ?? 'online', view: filters.view, page: String(filters.page), pageSize: '20' });
   for (const key of ['search', 'from', 'to'] as const) if (filters[key]) params.set(key, filters[key]);
+  if (filters.region && filters.region !== 'all') params.set('region', filters.region);
   return useQuery({
     queryKey: ['orders', filters],
     queryFn: () => api<{ items: OrderSummary[]; counts: Record<OrderView, number>; page: number; pageSize: number; total: number }>(`/admin/orders?${params}`),
@@ -112,9 +119,10 @@ export const OFFLINE_METHOD_LABEL: Record<OfflineMethod, string> = { cash: 'Cash
 
 export type OfflineOrderInput = {
   requestId: string;
+  region: SellingRegion;
   saleDate: string;
   items: { variantId: number; quantity: number; unitPricePaise: number }[];
-  customer: { name: string; phone: string; email?: string };
+  customer: { name: string; phone?: string; email?: string };
   delivery: { required: false } | { required: true; addressLine1: string; addressLine2: string; city: string; state: string; pincode: string };
   payment: { status: 'unpaid' } | { status: 'paid'; method: OfflineMethod; reference: string };
   note: string;

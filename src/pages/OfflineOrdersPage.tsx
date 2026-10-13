@@ -4,14 +4,14 @@ import { FILTER_PRESETS } from '@/features/reports/range';
 import { Plus, Store } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { SearchInput } from '@/components/ui/controls';
+import { SearchInput, Select } from '@/components/ui/controls';
 import { ErrorState, TableSkeleton } from '@/components/ui/DataState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { Panel } from '@/components/ui/Panel';
 import { useSession } from '@/features/auth/session';
-import { useOrders, type OrderFilters, type OrderView } from '@/features/orders/api';
+import { REGION_LABEL, useOrders, type OrderFilters, type OrderView, type SellingRegion } from '@/features/orders/api';
 import { CreateOfflineOrderDialog } from '@/features/orders/CreateOfflineOrderDialog';
 import { OrdersTable } from '@/features/orders/OrdersTable';
 import { OrderSheet } from '@/features/orders/OrderSheet';
@@ -26,7 +26,7 @@ const TABS: { view: OrderView; label: string }[] = [
 
 export default function OfflineOrdersPage() {
   const { can } = useSession();
-  const [filters, setFilters] = useState<OrderFilters>({ channel: 'offline', view: 'all', page: 1, search: '', from: '', to: '' });
+  const [filters, setFilters] = useState<OrderFilters>({ channel: 'offline', region: 'all', view: 'all', page: 1, search: '', from: '', to: '' });
   const orders = useOrders({ ...filters, search: useDeferredValue(filters.search) });
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
@@ -36,7 +36,7 @@ export default function OfflineOrdersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Offline Orders"
-        description="Sales made in person or over the phone. Stock is deducted when the order is saved."
+        description="Sales made in person or over the phone, in India or the UK. Indian sales take bottles out of the godown; UK sales only record the amount."
         actions={
           can('orders.create_offline') && (
             <Button onClick={() => setCreating(true)}>
@@ -66,6 +66,14 @@ export default function OfflineOrdersPage() {
       <Panel>
         <div className="grid gap-3 border-b border-border p-4 sm:grid-cols-[1fr_auto_auto] sm:px-5">
           <SearchInput placeholder="Order number, name or phone" aria-label="Search offline orders" value={filters.search} onChange={(e) => update({ search: e.target.value })} />
+          <Select aria-label="Selling region" className="w-full sm:w-40" value={filters.region ?? 'all'} onChange={(e) => update({ region: e.target.value as SellingRegion | 'all' })}>
+            <option value="all">All regions</option>
+            {(Object.keys(REGION_LABEL) as SellingRegion[]).map((region) => (
+              <option key={region} value={region}>
+                {REGION_LABEL[region]}
+              </option>
+            ))}
+          </Select>
           <DateRangePicker label="Order date" className="w-full sm:w-64" value={{ from: filters.from, to: filters.to }} presets={FILTER_PRESETS} clearable onChange={(r) => update({ from: r.from, to: r.to })} />
         </div>
         {orders.isPending ? (
@@ -75,7 +83,7 @@ export default function OfflineOrdersPage() {
         ) : orders.data.items.length === 0 ? (
           <EmptyState
             icon={Store}
-            title={filters.search || filters.view !== 'all' ? 'No matching offline orders' : 'No offline orders yet'}
+            title={filters.search || filters.view !== 'all' || (filters.region ?? 'all') !== 'all' ? 'No matching offline orders' : 'No offline orders yet'}
             description="Record sales made at events, in person or by phone."
             action={can('orders.create_offline') && filters.view === 'all' && !filters.search && <Button onClick={() => setCreating(true)}>Create order</Button>}
           />

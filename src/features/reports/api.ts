@@ -20,8 +20,10 @@ export type Report = {
     paymentsFailed: number;
   };
   channels: { channel: 'online' | 'offline'; orders: number; salesPaise: number }[];
+  /** Where sales were made. India covers the website and Indian offline sales; UK sales are offline only. */
+  regions: { region: 'india' | 'uk'; orders: number; salesPaise: number; unitsSold: number }[];
   timeseries: { period: string; onlineSalesPaise: number; offlineSalesPaise: number; salesPaise: number; refundsPaise: number; orders: number; unitsSold: number; unitsReceived: number }[];
-  products: { variantId: number; productName: string; sizeMl: number; units: number; revenue: number; online: number; offline: number; share: number }[];
+  products: { variantId: number; productName: string; sizeMl: number; units: number; revenue: number; online: number; offline: number; uk: number; share: number }[];
   orderStatus: { completed: number; inProgress: number; awaitingPayment: number; cancelled: number; expired: number; returned: number };
   stockFlow: { received: number; sold: number; cancelled: number; returned: number; adjusted: number; unitsSold: number };
   financial: null | {

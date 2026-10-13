@@ -2,7 +2,8 @@ import { ChevronRight } from 'lucide-react';
 import { formatDateTime } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 import type { OrderSummary } from './api';
-import { InvoiceButton } from './invoice';
+import { Badge } from '@/components/ui/Badge';
+import { hasInvoice, InvoiceButton } from './invoice';
 import { OrderStateBadge } from './labels';
 
 /**
@@ -37,6 +38,11 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
                   <button type="button" onClick={() => onOpen(order.id)} className="font-mono text-sm font-bold text-neutral-900 hover:underline">
                     {order.orderNumber}
                   </button>
+                  {order.sellingRegion === 'uk' && (
+                    <Badge tone="info" className="ml-2">
+                      UK
+                    </Badge>
+                  )}
                   <p className="mt-0.5 text-[11px] text-fg-muted tabular-nums">{formatDateTime(order.createdAt)}</p>
                 </td>
                 <td className="px-3 py-3">
@@ -59,7 +65,7 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
                   <OrderStateBadge order={order} />
                 </td>
                 <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap tabular-nums">{formatPaise(order.totalPaise)}</td>
-                <td className="px-3 py-3 whitespace-nowrap">{order.status === 'confirmed' ? <InvoiceButton order={order} label="PDF" /> : <span className="text-fg-subtle">—</span>}</td>
+                <td className="px-3 py-3 whitespace-nowrap">{hasInvoice(order) ? <InvoiceButton order={order} label="PDF" /> : <span className="text-fg-subtle">—</span>}</td>
                 <td className="py-3 pr-4">
                   <ChevronRight className="size-4 text-fg-subtle" aria-hidden />
                 </td>
@@ -74,7 +80,10 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
           <li key={order.id} className="px-4 py-3.5">
             <button type="button" onClick={() => onOpen(order.id)} className="flex w-full items-start gap-3 text-left">
               <div className="min-w-0 flex-1">
-                <p className="font-mono text-sm font-bold text-neutral-900">{order.orderNumber}</p>
+                <p className="flex items-center gap-2 font-mono text-sm font-bold text-neutral-900">
+                  {order.orderNumber}
+                  {order.sellingRegion === 'uk' && <Badge tone="info">UK</Badge>}
+                </p>
                 <p className="mt-0.5 text-[11px] text-fg-muted tabular-nums">{formatDateTime(order.createdAt)}</p>
               </div>
               <span className="font-mono text-sm font-bold tabular-nums">{formatPaise(order.totalPaise)}</span>

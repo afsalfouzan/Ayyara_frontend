@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, CalendarDays, Download, IndianRupee, Lock, PieChart, ReceiptText, ShoppingBag, TrendingUp, Trophy } from 'lucide-react';
+import { BarChart3, Boxes, CalendarDays, Download, Globe2, IndianRupee, Lock, PieChart, ReceiptText, ShoppingBag, TrendingUp, Trophy } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -120,17 +120,44 @@ function ReportBody({ report }: { report: Report }) {
       </div>
 
       <Panel>
-        <PanelHeader icon={Trophy} iconClass="text-amber-500" title="Sales by perfume" description="Booked orders in this period" />
+        <PanelHeader icon={Globe2} iconClass="text-blue-600" title="Sales by region" description="India covers the website and Indian offline sales. UK sales are entered in rupees and don’t change godown stock." />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[26rem] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-fg-subtle">
+                <th className="px-5 py-3 font-medium">Region</th>
+                <th className="px-3 py-3 text-right font-medium">Orders</th>
+                <th className="px-3 py-3 text-right font-medium">Bottles</th>
+                <th className="px-5 py-3 text-right font-medium">Sales</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {report.regions.map((r) => (
+                <tr key={r.region}>
+                  <td className="px-5 py-2.5 font-medium">{r.region === 'uk' ? 'UK' : 'India'}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{r.orders}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{r.unitsSold}</td>
+                  <td className="px-5 py-2.5 text-right tabular-nums">{formatPaise(r.salesPaise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      <Panel>
+        <PanelHeader icon={Trophy} iconClass="text-amber-500" title="Sales by perfume" description="Booked orders in this period. UK bottles are part of Offline." />
         {report.products.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-fg-muted">No sales in this period.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-sm">
+            <table className="w-full min-w-[46rem] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-fg-subtle">
                   <th className="px-5 py-3 font-medium">Perfume</th>
                   <th className="px-3 py-3 text-right font-medium">Online</th>
                   <th className="px-3 py-3 text-right font-medium">Offline</th>
+                  <th className="px-3 py-3 text-right font-medium">Of which UK</th>
                   <th className="px-3 py-3 text-right font-medium">Units</th>
                   <th className="px-3 py-3 text-right font-medium">Revenue</th>
                   <th className="px-3 py-3 text-right font-medium">Share</th>
@@ -148,6 +175,7 @@ function ReportBody({ report }: { report: Report }) {
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{p.online}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{p.offline}</td>
+                      <td className="px-3 py-2.5 text-right text-fg-muted tabular-nums">{p.uk || '—'}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{p.units}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{formatPaise(p.revenue)}</td>
                       <td className="px-3 py-2.5 text-right text-fg-muted tabular-nums">{(p.share * 100).toFixed(1)}%</td>

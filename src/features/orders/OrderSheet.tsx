@@ -38,6 +38,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
   const { can } = useSession();
   const canUpdate = can('orders.update_fulfilment');
   const offline = order.channel === 'offline';
+  const uk = order.sellingRegion === 'uk';
   // Offline orders are cancelled / paid by staff who can create them; online cancellations by fulfilment staff.
   const canCancelHere = order.canCancel && (offline ? can('orders.create_offline') : canUpdate);
   const canRecordPayment = order.canRecordPayment && can('orders.create_offline');
@@ -59,7 +60,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
   return (
     <div className="space-y-7">
       <div className="flex flex-wrap items-center gap-2">
-        {offline && <Badge tone="info">Offline order</Badge>}
+        {offline && <Badge tone="info">{uk ? 'UK sale' : 'Offline order'}</Badge>}
         <OrderStateBadge order={order} />
         {/* The state badge already says paid / awaiting payment; only add refund information. */}
         {(order.paymentStatus === 'refunded' || order.paymentStatus === 'partially_refunded') && <Badge tone="warning">{PAYMENT_LABEL[order.paymentStatus]}</Badge>}
@@ -67,6 +68,8 @@ function OrderBody({ order }: { order: OrderDetail }) {
       </div>
 
       <WhatsAppActions order={order} />
+
+      {uk && <p className="rounded-lg bg-info-bg px-3 py-2.5 text-xs text-info">Sold in the UK. This records the money only: godown stock was not changed, and no invoice or email goes to the customer.</p>}
 
       {order.status === 'pending_payment' && order.reservationExpiresAt && (
         <p className="rounded-lg bg-warning-bg px-3 py-2.5 text-sm text-warning">
@@ -212,6 +215,7 @@ function CancelDialog({ order, open, onClose }: { order: OrderDetail; open: bool
   const cancelOnline = useCancelOrder(order.id);
   const cancelOffline = useCancelOfflineOrder(order.id);
   const offline = order.channel === 'offline';
+  const uk = order.sellingRegion === 'uk';
   const cancel = offline ? cancelOffline : cancelOnline;
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string>();
@@ -222,7 +226,7 @@ function CancelDialog({ order, open, onClose }: { order: OrderDetail; open: bool
     if (reason.trim().length < 3) return setError('Give a reason');
     try {
       await cancel.mutateAsync({ reason: reason.trim() });
-      toast(offline ? `Order ${order.orderNumber} cancelled; bottles back in stock${order.paymentStatus === 'paid' ? ' and refund recorded' : ''}` : `Order ${order.orderNumber} cancelled and stock released`);
+      toast(uk ? `UK sale ${order.orderNumber} cancelled${order.paymentStatus === 'paid' ? ' and refund recorded' : ''}` : offline ? `Order ${order.orderNumber} cancelled; bottles back in stock${order.paymentStatus === 'paid' ? ' and refund recorded' : ''}` : `Order ${order.orderNumber} cancelled and stock released`);
       onClose();
     } catch (err) {
       setError(fieldErrorsOf(err).reason ?? messageOf(err));
@@ -237,7 +241,7 @@ function CancelDialog({ order, open, onClose }: { order: OrderDetail; open: bool
       title={`Cancel ${order.orderNumber}?`}
       description={
         offline
-          ? `The bottles go back into stock.${order.paymentStatus === 'paid' ? ' A refund is recorded — return the money to the customer yourself (cash, UPI, etc.).' : ''} This can’t be undone.`
+          ? `${uk ? 'Godown stock is not changed.' : 'The bottles go back into stock.'}${order.paymentStatus === 'paid' ? ' A refund is recorded — return the money to the customer yourself (cash, UPI, etc.).' : ''} This can’t be undone.`
           : 'The reserved stock goes back on sale. This can’t be undone.'
       }
     >
