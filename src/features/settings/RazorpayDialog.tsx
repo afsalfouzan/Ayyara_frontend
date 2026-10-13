@@ -187,6 +187,32 @@ function CredentialsForm({ settings, onCancel, onSaved }: { settings: RazorpaySe
   const [keySecret, setKeySecret] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
   const [clearWebhook, setClearWebhook] = useState(false);
+  const [createdSecret, setCreatedSecret] = useState('');
+  const [copiedSecret, setCopiedSecret] = useState(false);
+
+  async function copySecret(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedSecret(true);
+      toast('Secret copied. Paste it into Razorpay’s webhook form.');
+    } catch {
+      setCopiedSecret(false);
+    }
+  }
+
+  /**
+   * The webhook secret is a password shared with Razorpay, and Razorpay does not
+   * issue one. This makes a strong random one in the browser (48 characters) so
+   * nobody has to invent it; it is saved only when the form is.
+   */
+  async function createSecret() {
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    setWebhookSecret(secret);
+    setClearWebhook(false);
+    setCreatedSecret(secret);
+    await copySecret(secret);
+  }
   const [errors, setErrors] = useState<Record<string, string>>({});
   const keyChanged = keyId.trim() !== settings.keyId;
 
@@ -233,6 +259,30 @@ function CredentialsForm({ settings, onCancel, onSaved }: { settings: RazorpaySe
       <FormField label="Webhook secret" htmlFor="rzp-webhook-secret" error={errors.webhookSecret} hint={settings.webhookSecretLast4 ? `Leave blank to keep the saved secret (••••${settings.webhookSecretLast4}).` : 'Optional, but recommended: confirms payments even if a customer closes the browser.'}>
         <SecretInput id="rzp-webhook-secret" value={webhookSecret} onChange={(v) => { setWebhookSecret(v); setClearWebhook(false); }} placeholder={settings.webhookSecretLast4 ? 'Keep current secret' : ''} />
       </FormField>
+      <div className="-mt-2">
+        <button type="button" onClick={() => void createSecret()} className="text-xs font-bold text-neutral-900 underline underline-offset-2">
+          Create a secret for me
+        </button>
+        {createdSecret && webhookSecret === createdSecret && (
+          <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-900">
+            <p className="font-bold">A new secret is filled in above{copiedSecret ? ' and copied' : ''}.</p>
+            <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+              <li>
+                In Razorpay → Account &amp; Settings → Webhooks, paste it into the <strong>Secret</strong> field of the webhook and save there.
+              </li>
+              <li>
+                Then click <strong>Verify &amp; save</strong> here.
+              </li>
+            </ol>
+            <div className="mt-2 flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 font-mono">{createdSecret}</code>
+              <Button variant="secondary" size="sm" onClick={() => void copySecret(createdSecret)}>
+                Copy
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
       {settings.webhookSecretLast4 && (
         <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input type="checkbox" className="accent-[var(--primary)]" checked={clearWebhook} onChange={(e) => { setClearWebhook(e.target.checked); if (e.target.checked) setWebhookSecret(''); }} />
