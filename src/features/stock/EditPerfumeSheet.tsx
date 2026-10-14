@@ -8,7 +8,8 @@ import { Sheet } from '@/components/ui/Sheet';
 import { toast } from '@/components/ui/Toast';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { paiseToInput, parseRupees } from '@/lib/money';
-import { GENDER_LABEL, usePerfume, usePhotos, useSavePerfume, type Gender, type Perfume } from './api';
+import { GENDER_LABEL, usePerfume, usePhotos, useSavePerfume, useSaveProfile, type Gender, type Perfume } from './api';
+import { draftOf, ProfileFields, readDraft, type ProfileDraft } from './ProfileFields';
 
 export function EditPerfumeSheet({ perfumeId, onClose }: { perfumeId: number | null; onClose: () => void }) {
   const perfume = usePerfume(perfumeId);
@@ -110,6 +111,8 @@ type SizeRow = { key: string; id?: number; size: string; mrp: string; price: str
 
 function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void }) {
   const save = useSavePerfume(perfume.id);
+  const saveProfile = useSaveProfile(perfume.id);
+  const [profile, setProfile] = useState<ProfileDraft>(() => draftOf(perfume));
   const [name, setName] = useState(perfume.name);
   const [description, setDescription] = useState(perfume.description);
   const [visible, setVisible] = useState(perfume.status === 'active');
@@ -134,6 +137,8 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
       else if (mrp != null && !Number.isNaN(mrp) && price > mrp) next[`${row.key}.price`] = 'More than MRP';
     });
     if (new Set(sizes.map((s) => s.size)).size !== sizes.length) next.sizes = 'Each size can appear only once';
+    const profileResult = readDraft(profile);
+    Object.assign(next, profileResult.errors);
     setErrors(next);
     if (Object.keys(next).length) return;
 
@@ -151,6 +156,7 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
           lowStockThreshold: /^\d+$/.test(row.alert) ? Number(row.alert) : 5,
         })),
       });
+      await saveProfile.mutateAsync(profileResult.input);
       toast('Saved');
       onDone();
     } catch (error) {
@@ -237,11 +243,13 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
         </Button>
       </section>
 
+      <ProfileFields draft={profile} onChange={(patch) => setProfile((current) => ({ ...current, ...patch }))} errors={errors} />
+
       <div className="flex justify-end gap-2 border-t border-border pt-5">
         <Button variant="secondary" onClick={onDone}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={save.isPending}>
+        <Button onClick={submit} loading={save.isPending || saveProfile.isPending}>
           Save
         </Button>
       </div>
