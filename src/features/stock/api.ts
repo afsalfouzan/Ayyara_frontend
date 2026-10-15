@@ -11,39 +11,13 @@ export type Variant = {
   pricePaise: number;
   lowStockThreshold: number;
   maxPerOrder: number;
+  /** Every bottle ever received from purchases (corrections and sales don't count). */
+  totalPurchased: number;
   stock: { onHand: number; reserved: number; available: number; status: StockStatus };
 };
 
 export type Gender = 'men' | 'women' | 'unisex';
 export const GENDER_LABEL: Record<Gender, string> = { men: 'Men', women: 'Women', unisex: 'Unisex' };
-
-/** Allowed values for the fragrance profile; kept in step with the backend's modules/stock/fragrance-profile.ts. */
-export const CONCENTRATIONS = ['Extrait de Parfum', 'Parfum', 'Eau de Parfum', 'Eau de Toilette', 'Eau de Cologne'] as const;
-export const FRAGRANCE_FAMILIES = ['Floral', 'Fruity', 'Fresh', 'Citrus', 'Aquatic', 'Green', 'Aromatic', 'Fougère', 'Chypre', 'Woody', 'Amber', 'Spicy', 'Gourmand', 'Leather', 'Oud'] as const;
-export const PROJECTION_LABEL = { soft: 'Soft: stays close to the skin', moderate: 'Moderate: noticed within arm’s length', strong: 'Strong: fills the space around you' } as const;
-export const SEASON_LABEL = { summer: 'Summer', monsoon: 'Monsoon', winter: 'Winter' } as const;
-export const OCCASION_LABEL = { daytime: 'Daytime', office: 'Office', casual: 'Casual', evening: 'Evening', 'date night': 'Date night', 'special occasions': 'Special occasions' } as const;
-
-export type Projection = keyof typeof PROJECTION_LABEL;
-export type Season = keyof typeof SEASON_LABEL;
-export type Occasion = keyof typeof OCCASION_LABEL;
-
-export type FragranceProfile = {
-  fragranceFamily: string | null;
-  longevityHours: { min: number; max: number } | null;
-  projection: Projection | null;
-  seasons: Season[];
-  occasions: Occasion[];
-  similarScents: string | null;
-  keyIngredients: string[];
-  allergens: string | null;
-  perfumer: string | null;
-  launchYear: number | null;
-};
-
-export type Notes = { top: string[]; heart: string[]; base: string[] };
-
-export type ProfileInput = Omit<FragranceProfile, 'fragranceFamily'> & { concentration: string; notes: Notes; fragranceFamily: string | null };
 
 export type Perfume = {
   id: number;
@@ -52,9 +26,6 @@ export type Perfume = {
   description: string;
   status: 'active' | 'hidden';
   gender: Gender;
-  concentration: string;
-  notes: Notes;
-  profile: FragranceProfile;
   images: Photo[];
   variants: Variant[];
   totalOnHand: number;
@@ -121,14 +92,6 @@ export function useSavePerfume(id: number) {
   return useMutation({
     mutationFn: (input: { name: string; description: string; status: 'active' | 'hidden'; gender: Gender; variants: { id?: number; sizeMl: number; mrpPaise: number; pricePaise: number; lowStockThreshold: number }[] }) =>
       api<{ perfume: Perfume }>(`/admin/stock/products/${id}`, { method: 'PUT', body: input }).then((d) => d.perfume),
-    onSuccess: () => refresh(),
-  });
-}
-
-export function useSaveProfile(id: number) {
-  const refresh = useRefresh();
-  return useMutation({
-    mutationFn: (input: ProfileInput) => api<{ perfume: Perfume }>(`/admin/stock/products/${id}/profile`, { method: 'PUT', body: input }).then((d) => d.perfume),
     onSuccess: () => refresh(),
   });
 }

@@ -1,7 +1,8 @@
 import type { ComponentType } from 'react';
-import { createBrowserRouter, type RouteObject } from 'react-router';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { FullScreenLoader, RequireAuth, RequirePermission } from '@/features/auth/guards';
+import { useSession } from '@/features/auth/session';
 import type { Permission } from '@/lib/permissions';
 import { RouteErrorPage } from '@/pages/RouteErrorPage';
 import { navItems } from './navigation';
@@ -39,9 +40,24 @@ function guarded(permission: Permission, load: () => Promise<{ default: Componen
   };
 }
 
+/** The dashboard, or, for a role without it (such as a godown manager), the first page that role can open. */
+function guardedHome(load: () => Promise<{ default: ComponentType }>): RouteObject['lazy'] {
+  return async () => {
+    const { default: Page } = await load();
+    return {
+      Component: function Home() {
+        const { can, user } = useSession();
+        if (can('dashboard.view')) return <Page />;
+        const first = navItems.find((item) => item.path !== '/' && (item.ownerOnly ? user?.isOwner : can(item.permission)));
+        return first ? <Navigate to={first.path} replace /> : <RequirePermission permission="dashboard.view"><Page /></RequirePermission>;
+      },
+    };
+  };
+}
+
 const moduleRoutes: RouteObject[] = navItems.map((item) => {
   const load = implemented[item.path] ?? (() => import('@/pages/ModulePage'));
-  const lazy = guarded(item.permission, load, item.ownerOnly);
+  const lazy = item.path === '/' ? guardedHome(load) : guarded(item.permission, load, item.ownerOnly);
   return item.path === '/' ? { index: true, lazy } : { path: item.path.slice(1), lazy };
 });
 

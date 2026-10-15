@@ -322,6 +322,7 @@ function DesktopTable({ perfumes, actions, fullest }: { perfumes: Perfume[]; act
             <th className="px-5 py-3">Perfume</th>
             <th className="px-3 py-3">Size</th>
             <th className="px-3 py-3 text-right">Price</th>
+            <th className="px-3 py-3 text-right">Total purchased</th>
             <th className="px-5 py-3">In godown</th>
             <th className="px-5 py-3 text-right">
               <span className="sr-only">Actions</span>
@@ -346,6 +347,7 @@ function DesktopTable({ perfumes, actions, fullest }: { perfumes: Perfume[]; act
                 <td className="px-3 py-4 text-right whitespace-nowrap">
                   <Price variant={variant} />
                 </td>
+                <td className="px-3 py-4 text-right font-mono text-sm font-bold whitespace-nowrap text-neutral-900 tabular-nums">{variant.totalPurchased}</td>
                 <td className="px-5 py-4">
                   <StockLevel variant={variant} fullest={fullest} />
                 </td>
@@ -398,6 +400,9 @@ function MobileCards({ perfumes, actions, fullest }: { perfumes: Perfume[]; acti
                 </div>
                 <div className="mt-2.5 [&>div]:max-w-none">
                   <StockLevel variant={variant} fullest={fullest} />
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    Total purchased <span className="font-mono font-bold text-neutral-900 tabular-nums">{variant.totalPurchased}</span>
+                  </p>
                 </div>
               </li>
             ))}

@@ -5,10 +5,11 @@ export { istToday };
 
 const shift = addDays;
 
-export type PresetKey = 'today' | '7d' | '30d' | 'month' | 'last_month' | '6m' | 'year' | 'custom';
+export type PresetKey = 'all' | 'today' | '7d' | '30d' | 'month' | 'last_month' | '6m' | 'year' | 'custom';
+type FixedPreset = Exclude<PresetKey, 'custom' | 'all'>;
 export type Range = { preset: PresetKey; from: string; to: string };
 
-export const PRESETS: { key: Exclude<PresetKey, 'custom'>; label: string }[] = [
+export const PRESETS: { key: FixedPreset; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: '7d', label: 'Last 7 days' },
   { key: '30d', label: 'Last 30 days' },
@@ -18,7 +19,7 @@ export const PRESETS: { key: Exclude<PresetKey, 'custom'>; label: string }[] = [
   { key: 'year', label: 'This year' },
 ];
 
-export function presetRange(key: Exclude<PresetKey, 'custom'>): Range {
+export function presetRange(key: FixedPreset): Range {
   const today = istToday();
   const [y, m] = today.split('-').map(Number) as [number, number];
   switch (key) {
@@ -42,8 +43,19 @@ export function presetRange(key: Exclude<PresetKey, 'custom'>): Range {
   }
 }
 
-const label = (key: Exclude<PresetKey, 'custom'>) => PRESETS.find((p) => p.key === key)!.label;
-const preset = (key: Exclude<PresetKey, 'custom'>, text = label(key)): DatePreset => ({ key, label: text, range: () => presetRange(key) });
+const label = (key: FixedPreset) => PRESETS.find((p) => p.key === key)!.label;
+const preset = (key: FixedPreset, text = label(key)): DatePreset => ({ key, label: text, range: () => presetRange(key) });
+
+/**
+ * Everything since the shop's first order or stock movement (`firstDay`, from the
+ * backend), up to today. Reports cover two years at most, so older days are left out.
+ */
+export function allTimeRange(firstDay: string | null): Range {
+  const today = istToday();
+  const earliest = shift(today, -730);
+  const from = !firstDay ? today : firstDay < earliest ? earliest : firstDay;
+  return { preset: 'all', from, to: today };
+}
 
 /** Presets in the date picker on Reports and the dashboard. */
 export const REPORT_PRESETS: DatePreset[] = [preset('today'), preset('7d', '7 Days'), preset('30d', '30 Days'), preset('month'), preset('last_month'), preset('6m'), preset('year')];

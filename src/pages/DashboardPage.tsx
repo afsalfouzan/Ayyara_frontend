@@ -16,7 +16,7 @@ import { RangePicker } from '@/features/reports/RangePicker';
 import { formatRelative } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 
-const RANGE_TABS: { key: Exclude<PresetKey, 'custom'>; label: string }[] = [
+const RANGE_TABS: { key: Exclude<PresetKey, 'custom' | 'all'>; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: '7d', label: '7 Days' },
   { key: '30d', label: '30 Days' },

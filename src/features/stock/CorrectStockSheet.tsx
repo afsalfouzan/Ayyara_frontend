@@ -1,6 +1,7 @@
 import { clsx } from 'clsx';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select, TextArea } from '@/components/ui/controls';
 import { Sheet } from '@/components/ui/Sheet';
 import { toast } from '@/components/ui/Toast';
@@ -25,6 +26,7 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
   const [reasonCode, setReasonCode] = useState('');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
 
   const current = target.variant.stock.onHand;
   const next = /^\d+$/.test(counted) ? Number(counted) : null;
@@ -40,6 +42,11 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
     if (note.trim().length < 3) problems.note = 'Explain what happened';
     setErrors(problems);
     if (Object.keys(problems).length) return;
+    setConfirming(true);
+  }
+
+  async function save() {
+    setConfirming(false);
     try {
       await correct.mutateAsync({ variantId: target.variant.id, quantity: change, reasonCode, note: note.trim(), requestId });
       toast(`${target.name} ${target.variant.sizeMl} ML is now ${next}`);
@@ -86,6 +93,23 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
           Save
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirming}
+        title={`Change ${target.name} ${target.variant.sizeMl} ML to ${next}?`}
+        tone="primary"
+        confirmLabel="Yes, change quantity"
+        loading={correct.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void save()}
+        message={
+          <>
+            <p className="font-medium text-fg tabular-nums">
+              {current} → {next} ({change > 0 ? `+${change}` : change} units)
+            </p>
+            <p className="mt-2">Customers can buy only what is in the godown, so the website changes straight away. The correction stays in the stock history.</p>
+          </>
+        }
+      />
     </form>
   );
 }

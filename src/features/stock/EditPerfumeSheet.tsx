@@ -2,14 +2,14 @@ import { ArrowLeft, ArrowRight, ImagePlus, Plus, Trash2, X } from 'lucide-react'
 import { useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select, Switch, TextArea } from '@/components/ui/controls';
 import { ErrorState } from '@/components/ui/DataState';
 import { Sheet } from '@/components/ui/Sheet';
 import { toast } from '@/components/ui/Toast';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
-import { paiseToInput, parseRupees } from '@/lib/money';
-import { GENDER_LABEL, usePerfume, usePhotos, useSavePerfume, useSaveProfile, type Gender, type Perfume } from './api';
-import { draftOf, ProfileFields, readDraft, type ProfileDraft } from './ProfileFields';
+import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
+import { GENDER_LABEL, usePerfume, usePhotos, useSavePerfume, type Gender, type Perfume } from './api';
 
 export function EditPerfumeSheet({ perfumeId, onClose }: { perfumeId: number | null; onClose: () => void }) {
   const perfume = usePerfume(perfumeId);
@@ -33,6 +33,7 @@ function Photos({ perfume }: { perfume: Perfume }) {
   const { upload, reorder, remove } = usePhotos(perfume.id);
   const input = useRef<HTMLInputElement>(null);
   const photos = perfume.images;
+  const [deleting, setDeleting] = useState<number | null>(null);
 
   async function add(files: FileList | null) {
     for (const file of Array.from(files ?? []).slice(0, 8 - photos.length)) {
@@ -75,7 +76,7 @@ function Photos({ perfume }: { perfume: Perfume }) {
               <button type="button" aria-label="Move left" disabled={index === 0} onClick={() => move(index, -1)} className="grid size-7 place-items-center rounded text-white disabled:opacity-30">
                 <ArrowLeft className="size-3.5" aria-hidden />
               </button>
-              <button type="button" aria-label="Delete photo" onClick={() => remove.mutate(photo.id, { onSuccess: () => toast('Photo removed'), onError: (e) => toast(messageOf(e), 'error') })} className="grid size-7 place-items-center rounded text-white">
+              <button type="button" aria-label="Delete photo" onClick={() => setDeleting(photo.id)} className="grid size-7 place-items-center rounded text-white">
                 <X className="size-3.5" aria-hidden />
               </button>
               <button type="button" aria-label="Move right" disabled={index === photos.length - 1} onClick={() => move(index, 1)} className="grid size-7 place-items-center rounded text-white disabled:opacity-30">
@@ -103,6 +104,22 @@ function Photos({ perfume }: { perfume: Perfume }) {
           </li>
         )}
       </ul>
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete this photo?"
+        message="It is removed from the website straight away and can’t be brought back. To use it again, upload it again."
+        confirmLabel="Delete photo"
+        loading={remove.isPending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() =>
+          deleting !== null &&
+          remove.mutate(deleting, {
+            onSuccess: () => toast('Photo removed'),
+            onError: (e) => toast(messageOf(e), 'error'),
+            onSettled: () => setDeleting(null),
+          })
+        }
+      />
     </section>
   );
 }
@@ -111,8 +128,6 @@ type SizeRow = { key: string; id?: number; size: string; mrp: string; price: str
 
 function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void }) {
   const save = useSavePerfume(perfume.id);
-  const saveProfile = useSaveProfile(perfume.id);
-  const [profile, setProfile] = useState<ProfileDraft>(() => draftOf(perfume));
   const [name, setName] = useState(perfume.name);
   const [description, setDescription] = useState(perfume.description);
   const [visible, setVisible] = useState(perfume.status === 'active');
@@ -121,6 +136,8 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
     perfume.variants.map((v) => ({ key: String(v.id), id: v.id, size: String(v.sizeMl), mrp: paiseToInput(v.mrpPaise), price: paiseToInput(v.pricePaise), alert: String(v.lowStockThreshold), onHand: v.stock.onHand })),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Price changes and hiding the perfume reach customers straight away, so they are confirmed first.
+  const [changes, setChanges] = useState<string[] | null>(null);
   const updateSize = (key: string, patch: Partial<SizeRow>) => setSizes((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
   async function submit() {
@@ -137,11 +154,25 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
       else if (mrp != null && !Number.isNaN(mrp) && price > mrp) next[`${row.key}.price`] = 'More than MRP';
     });
     if (new Set(sizes.map((s) => s.size)).size !== sizes.length) next.sizes = 'Each size can appear only once';
-    const profileResult = readDraft(profile);
-    Object.assign(next, profileResult.errors);
     setErrors(next);
     if (Object.keys(next).length) return;
 
+    const shopChanges: string[] = [];
+    for (const row of sizes) {
+      const old = perfume.variants.find((variant) => variant.id === row.id);
+      if (!old) continue;
+      const price = parseRupees(row.price)!;
+      const mrp = parseRupees(row.mrp)!;
+      if (price !== old.pricePaise) shopChanges.push(`${old.sizeMl} ml selling price ${formatPaise(old.pricePaise)} → ${formatPaise(price)}`);
+      if (mrp !== old.mrpPaise) shopChanges.push(`${old.sizeMl} ml MRP ${formatPaise(old.mrpPaise)} → ${formatPaise(mrp)}`);
+    }
+    if (perfume.status === 'active' && !visible) shopChanges.push('Hidden from the website: customers can no longer see or buy it');
+    if (shopChanges.length) setChanges(shopChanges);
+    else await persist();
+  }
+
+  async function persist() {
+    setChanges(null);
     try {
       await save.mutateAsync({
         name: name.trim(),
@@ -156,7 +187,6 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
           lowStockThreshold: /^\d+$/.test(row.alert) ? Number(row.alert) : 5,
         })),
       });
-      await saveProfile.mutateAsync(profileResult.input);
       toast('Saved');
       onDone();
     } catch (error) {
@@ -243,16 +273,33 @@ function DetailsForm({ perfume, onDone }: { perfume: Perfume; onDone: () => void
         </Button>
       </section>
 
-      <ProfileFields draft={profile} onChange={(patch) => setProfile((current) => ({ ...current, ...patch }))} errors={errors} />
-
       <div className="flex justify-end gap-2 border-t border-border pt-5">
         <Button variant="secondary" onClick={onDone}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={save.isPending || saveProfile.isPending}>
+        <Button onClick={submit} loading={save.isPending}>
           Save
         </Button>
       </div>
+      <ConfirmDialog
+        open={changes !== null}
+        title={`Save changes to ${perfume.name}?`}
+        tone="primary"
+        confirmLabel="Yes, save"
+        loading={save.isPending}
+        onCancel={() => setChanges(null)}
+        onConfirm={() => void persist()}
+        message={
+          <>
+            <ul className="list-disc space-y-1 pl-5 text-fg">
+              {changes?.map((change) => (
+                <li key={change}>{change}</li>
+              ))}
+            </ul>
+            <p className="mt-3">The website shows this straight away. Orders already placed keep their price.</p>
+          </>
+        }
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select, Switch, TextArea } from '@/components/ui/controls';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
@@ -45,6 +46,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
 
   const update = (key: string, patch: Partial<Row>) => setRows((current) => current.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const perfumeOf = (row: Row) => perfumes.find((p) => String(p.id) === row.perfumeId);
@@ -90,7 +92,11 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
     }
     setErrors(next);
     if (Object.keys(next).length) return;
+    setConfirming(true);
+  }
 
+  async function save() {
+    setConfirming(false);
     try {
       const order = await create.mutateAsync({
         requestId,
@@ -366,6 +372,36 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
           </Button>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirming}
+        title={uk ? 'Save this UK sale?' : 'Save this offline order?'}
+        tone="primary"
+        confirmLabel={uk ? 'Yes, save UK sale' : 'Yes, save order'}
+        loading={create.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void save()}
+        message={
+          <>
+            <ul className="space-y-1 text-fg">
+              {rows.map((row) => (
+                <li key={row.key} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">
+                    {perfumeOf(row)?.name} · {variantOf(row)?.sizeMl} ml × {row.quantity}
+                  </span>
+                  <span className="shrink-0 tabular-nums">{formatPaise(lineTotal(row))}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 border-t border-border pt-2 font-medium text-fg">
+              {customer.name.trim()} · {formatPaise(total)} · {paid ? `paid by ${OFFLINE_METHOD_LABEL[method]}` : 'not paid yet'}
+            </p>
+            <p className="mt-3">
+              {uk ? 'Godown stock is not changed.' : 'The bottles are taken out of godown stock straight away.'}
+              {paid ? ` The money is added to ${method === 'cash' ? 'Cash in hand' : 'the bank account that receives offline money'}.` : ''} Once saved, the order can be cancelled but not edited.
+            </p>
+          </>
+        }
+      />
     </div>
   );
 }

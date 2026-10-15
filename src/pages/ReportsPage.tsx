@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import { BarChart3, Boxes, CalendarDays, Download, Globe2, IndianRupee, Lock, PieChart, ReceiptText, ShoppingBag, TrendingUp, Trophy } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
@@ -9,9 +10,9 @@ import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { StatTile } from '@/components/ui/StatTile';
 import { toast } from '@/components/ui/Toast';
 import { useSession } from '@/features/auth/session';
-import { useReport, type GroupBy, type Report } from '@/features/reports/api';
+import { useFirstDay, useReport, type GroupBy, type Report, type ReportRegion } from '@/features/reports/api';
 import { ChannelPie, SalesTrendChart } from '@/features/reports/charts';
-import { defaultGroupBy, periodLabel, presetRange, type Range } from '@/features/reports/range';
+import { allTimeRange, defaultGroupBy, periodLabel, presetRange, type Range } from '@/features/reports/range';
 import { RangePicker } from '@/features/reports/RangePicker';
 import { formatPaise } from '@/lib/money';
 
@@ -19,20 +20,25 @@ const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api/v1')
 
 export default function ReportsPage() {
   const { can } = useSession();
-  const [range, setRange] = useState<Range>(() => presetRange('30d'));
+  const firstDay = useFirstDay();
+  const [picked, setRange] = useState<Range | null>(null);
+  // Opens on "All time"; if the first day can't be loaded, on the last 30 days instead.
+  const range = picked ?? (firstDay.isSuccess ? allTimeRange(firstDay.data) : firstDay.isError ? presetRange('30d') : null);
   const [groupBy, setGroupBy] = useState<GroupBy | 'auto'>('auto');
-  const effectiveGroup = groupBy === 'auto' ? defaultGroupBy(range) : groupBy;
-  const report = useReport(range.from, range.to, effectiveGroup);
+  const effectiveGroup = range && groupBy === 'auto' ? defaultGroupBy(range) : groupBy === 'auto' ? 'day' : groupBy;
+  const [region, setRegion] = useState<ReportRegion>('all');
+  const report = useReport(range?.from ?? '', range?.to ?? '', effectiveGroup, region);
   const [exporting, setExporting] = useState<string | null>(null);
 
   async function exportCsv(kind: 'sales' | 'products') {
+    if (!range) return;
     setExporting(kind);
     try {
-      const params = new URLSearchParams({ from: range.from, to: range.to, groupBy: effectiveGroup, kind });
+      const params = new URLSearchParams({ from: range.from, to: range.to, groupBy: effectiveGroup, region, kind });
       const response = await fetch(`${API_URL}/admin/reports/export.csv?${params}`, { credentials: 'include', headers: { 'X-Requested-With': 'ayyara-admin' } });
       if (!response.ok) throw new Error();
       const url = URL.createObjectURL(await response.blob());
-      Object.assign(document.createElement('a'), { href: url, download: `ayyara-${kind}-${range.from}-to-${range.to}.csv` }).click();
+      Object.assign(document.createElement('a'), { href: url, download: `ayyara-${kind}${region === 'all' ? '' : `-${region}`}-${range.from}-to-${range.to}.csv` }).click();
       URL.revokeObjectURL(url);
     } catch {
       toast('Could not export the report. Please try again.', 'error');
@@ -62,7 +68,12 @@ export default function ReportsPage() {
         }
       />
       <div className="flex flex-wrap items-center gap-2">
-        <RangePicker value={range} onChange={setRange} />
+        {range && <RangePicker value={range} onChange={setRange} firstDay={firstDay.data ?? null} />}
+        <Select aria-label="Region" value={region} onChange={(e) => setRegion(e.target.value as ReportRegion)}>
+          <option value="all">All regions</option>
+          <option value="india">India</option>
+          <option value="uk">UK</option>
+        </Select>
         <Select aria-label="Group by" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy | 'auto')}>
           <option value="auto">Group: automatic</option>
           <option value="day">Daily</option>
@@ -78,13 +89,17 @@ export default function ReportsPage() {
       ) : !report.data ? (
         <div className="h-96 animate-pulse rounded-xl bg-gray-200/60" />
       ) : (
-        <ReportBody report={report.data} />
+        <ReportBody report={report.data} region={region} />
       )}
     </div>
   );
 }
 
-function ReportBody({ report }: { report: Report }) {
+function ReportBody({ report, region }: { report: Report; region: ReportRegion }) {
+  // The godown is in India; UK sales never move stock, so its stock panels stay hidden for the UK.
+  const godown = region !== 'uk';
+  // Purchase costs are confidential; the backend sends them only to those allowed to see costs.
+  const showCost = report.purchased.some((row) => row.totalCostPaise != null);
   const t = report.totals;
   const f = report.financial;
   return (
@@ -103,6 +118,64 @@ function ReportBody({ report }: { report: Report }) {
           <StatTile label="Bottles received" value={report.stockFlow.received} hint="From purchases" icon={Boxes} color="teal" />
         </li>
       </ul>
+
+      {/* Profit second, after the headline figures, for those allowed to see it. */}
+      {f ? (
+        <Panel>
+          <PanelHeader icon={TrendingUp} iconClass="text-emerald-600" title="Profit" description="Cost uses the average purchase price of each size" actions={<Badge tone="warning"><Lock className="size-3" aria-hidden />Confidential</Badge>} />
+          <ul className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
+            <li><StatTile label="Cost of goods sold" value={formatPaise(f.costOfGoodsPaise)} icon={Boxes} color="cost" /></li>
+            <li><StatTile label="Gross profit" value={f.grossProfitPaise != null ? formatPaise(f.grossProfitPaise) : '—'} hint={f.marginPercent != null ? `${f.marginPercent}% margin` : 'Needs purchase costs'} icon={TrendingUp} color="emerald" highlight /></li>
+            <li><StatTile label="Stock value now" value={formatPaise(f.stockValuePaise)} hint="At average cost" icon={Boxes} color="neutral" /></li>
+            <li><StatTile label="Sold without a cost" value={f.unitsWithoutCost} hint={f.unitsWithoutCost ? `${formatPaise(f.revenueWithoutCostPaise)} of sales left out of profit. Add costs in Purchase history.` : 'All costs recorded'} icon={IndianRupee} color={f.unitsWithoutCost ? 'rose' : 'emerald'} highlight={f.unitsWithoutCost > 0} /></li>
+          </ul>
+        </Panel>
+      ) : null}
+
+      {godown && (
+        <Panel>
+          <PanelHeader icon={Boxes} iconClass="text-teal-600" title="Purchased by perfume" description="Bottles received from purchases, for each size" actions={showCost ? <Badge tone="warning"><Lock className="size-3" aria-hidden />Confidential</Badge> : undefined} />
+          {report.purchased.length === 0 ? (
+            <p className="px-5 py-8 text-center text-sm text-fg-muted">No purchases recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-fg-muted">
+                    <th className="px-5 py-3 font-medium">Perfume</th>
+                    <th className="px-3 py-3 text-right font-medium">In this period</th>
+                    {showCost && <th className="px-3 py-3 text-right font-medium">Cost in this period</th>}
+                    <th className={clsx('py-3 text-right font-medium', showCost ? 'px-3' : 'px-5')}>Total purchased</th>
+                    {showCost && <th className="px-5 py-3 text-right font-medium">Total cost</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {report.purchased.map((row) => (
+                    <tr key={row.variantId}>
+                      <td className="px-5 py-2.5">
+                        {row.productName} <span className="text-fg-muted">· {row.sizeMl} ml</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{row.inPeriod}</td>
+                      {showCost && <td className="px-3 py-2.5 text-right tabular-nums">{formatPaise(row.periodCostPaise ?? 0)}</td>}
+                      <td className={clsx('py-2.5 text-right font-medium tabular-nums', showCost ? 'px-3' : 'px-5')}>{row.total}</td>
+                      {showCost && <td className="px-5 py-2.5 text-right font-medium tabular-nums">{formatPaise(row.totalCostPaise ?? 0)}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border bg-surface-muted font-medium">
+                    <td className="px-5 py-2.5">All perfumes</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{report.purchased.reduce((sum, row) => sum + row.inPeriod, 0)}</td>
+                    {showCost && <td className="px-3 py-2.5 text-right tabular-nums">{formatPaise(report.purchased.reduce((sum, row) => sum + (row.periodCostPaise ?? 0), 0))}</td>}
+                    <td className={clsx('py-2.5 text-right tabular-nums', showCost ? 'px-3' : 'px-5')}>{report.purchased.reduce((sum, row) => sum + row.total, 0)}</td>
+                    {showCost && <td className="px-5 py-2.5 text-right tabular-nums">{formatPaise(report.purchased.reduce((sum, row) => sum + (row.totalCostPaise ?? 0), 0))}</td>}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
         <Panel>
@@ -190,7 +263,7 @@ function ReportBody({ report }: { report: Report }) {
         )}
       </Panel>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className={godown ? 'grid gap-6 xl:grid-cols-2' : 'grid gap-6'}>
         <Panel>
           <PanelHeader icon={ReceiptText} iconClass="text-indigo-600" title="Orders by status" description="All orders placed in this period" />
           <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3">
@@ -216,45 +289,35 @@ function ReportBody({ report }: { report: Report }) {
           </p>
         </Panel>
 
-        <Panel>
-          <PanelHeader icon={Boxes} iconClass="text-orange-500" title="Stock movement" description="Bottles in and out of the godown in this period" />
-          <dl className="divide-y divide-border text-sm">
-            {(
-              [
-                ['Received from purchases', report.stockFlow.received, '+'],
-                ['Sold', report.stockFlow.sold, '−'],
-                ['Back from cancelled orders', report.stockFlow.cancelled, '+'],
-                ['Returned by customers', report.stockFlow.returned, '+'],
-                ['Corrections', report.stockFlow.adjusted, report.stockFlow.adjusted >= 0 ? '+' : '−'],
-              ] as const
-            ).map(([label, value, sign]) => (
-              <div key={label} className="flex justify-between px-5 py-2.5">
-                <dt className="text-fg-muted">{label}</dt>
-                <dd className="tabular-nums">
-                  {value ? sign : ''}
-                  {Math.abs(value)}
-                </dd>
+        {godown && (
+          <Panel>
+            <PanelHeader icon={Boxes} iconClass="text-orange-500" title="Stock movement" description="Bottles in and out of the godown in this period" />
+            <dl className="divide-y divide-border text-sm">
+              {(
+                [
+                  ['Received from purchases', report.stockFlow.received, '+'],
+                  ['Sold', report.stockFlow.sold, '−'],
+                  ['Back from cancelled orders', report.stockFlow.cancelled, '+'],
+                  ['Returned by customers', report.stockFlow.returned, '+'],
+                  ['Corrections', report.stockFlow.adjusted, report.stockFlow.adjusted >= 0 ? '+' : '−'],
+                ] as const
+              ).map(([label, value, sign]) => (
+                <div key={label} className="flex justify-between px-5 py-2.5">
+                  <dt className="text-fg-muted">{label}</dt>
+                  <dd className="tabular-nums">
+                    {value ? sign : ''}
+                    {Math.abs(value)}
+                  </dd>
+                </div>
+              ))}
+              <div className="flex justify-between bg-surface-muted px-5 py-2.5 font-medium">
+                <dt>Net bottles sold</dt>
+                <dd className="tabular-nums">{report.stockFlow.unitsSold}</dd>
               </div>
-            ))}
-            <div className="flex justify-between bg-surface-muted px-5 py-2.5 font-medium">
-              <dt>Net bottles sold</dt>
-              <dd className="tabular-nums">{report.stockFlow.unitsSold}</dd>
-            </div>
-          </dl>
-        </Panel>
+            </dl>
+          </Panel>
+        )}
       </div>
-
-      {f ? (
-        <Panel>
-          <PanelHeader icon={TrendingUp} iconClass="text-emerald-600" title="Profit" description="Cost uses the average purchase price of each size" actions={<Badge tone="warning"><Lock className="size-3" aria-hidden />Confidential</Badge>} />
-          <ul className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
-            <li><StatTile label="Cost of goods sold" value={formatPaise(f.costOfGoodsPaise)} icon={Boxes} color="cost" /></li>
-            <li><StatTile label="Gross profit" value={f.grossProfitPaise != null ? formatPaise(f.grossProfitPaise) : '—'} hint={f.marginPercent != null ? `${f.marginPercent}% margin` : 'Needs purchase costs'} icon={TrendingUp} color="emerald" highlight /></li>
-            <li><StatTile label="Stock value now" value={formatPaise(f.stockValuePaise)} hint="At average cost" icon={Boxes} color="neutral" /></li>
-            <li><StatTile label="Sold without a cost" value={f.unitsWithoutCost} hint={f.unitsWithoutCost ? `${formatPaise(f.revenueWithoutCostPaise)} of sales left out of profit. Add costs in Purchase history.` : 'All costs recorded'} icon={IndianRupee} color={f.unitsWithoutCost ? 'rose' : 'emerald'} highlight={f.unitsWithoutCost > 0} /></li>
-          </ul>
-        </Panel>
-      ) : null}
 
       <PeriodDetails report={report} />
     </>

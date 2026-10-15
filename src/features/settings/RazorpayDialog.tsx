@@ -215,6 +215,8 @@ function CredentialsForm({ settings, onCancel, onSaved }: { settings: RazorpaySe
   }
   const [errors, setErrors] = useState<Record<string, string>>({});
   const keyChanged = keyId.trim() !== settings.keyId;
+  const [confirming, setConfirming] = useState(false);
+  const live = keyId.trim().startsWith('rzp_live_');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -224,6 +226,11 @@ function CredentialsForm({ settings, onCancel, onSaved }: { settings: RazorpaySe
     if ((keyChanged || !settings.keySecretLast4) && keySecret.trim().length < 8) next.keySecret = 'Enter the key secret';
     setErrors(next);
     if (Object.keys(next).length) return;
+    setConfirming(true);
+  }
+
+  async function persist() {
+    setConfirming(false);
     try {
       await save.mutateAsync({
         keyId: keyId.trim(),
@@ -299,6 +306,24 @@ function CredentialsForm({ settings, onCancel, onSaved }: { settings: RazorpaySe
           Verify &amp; save
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirming}
+        title={`Save ${live ? 'live' : 'test'} Razorpay keys?`}
+        tone="primary"
+        confirmLabel="Yes, verify & save"
+        loading={save.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void persist()}
+        message={
+          <>
+            <p className="font-mono text-fg">{keyId.trim()}</p>
+            <p className="mt-2">
+              {settings.keyId ? 'These replace the saved keys, and every' : 'Every'} online payment uses them straight away.{' '}
+              {live ? 'Live keys take real money from customers.' : 'Test keys take no real money, so customers can’t actually pay while they are in use.'}
+            </p>
+          </>
+        }
+      />
     </form>
   );
 }

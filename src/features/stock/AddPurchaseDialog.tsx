@@ -3,6 +3,7 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select, TextArea } from '@/components/ui/controls';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
@@ -58,6 +59,8 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
   const [pendingPerfumes, setPendingPerfumes] = useState<PendingPerfume[]>([]);
   const [pendingSizes, setPendingSizes] = useState<PendingSize[]>([]);
   const [creating, setCreating] = useState<Creating>(null);
+  // The checked purchase, waiting for a final yes: costs can't be changed once it is saved.
+  const [confirming, setConfirming] = useState<PurchaseItemInput[] | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const update = (key: string, patch: Partial<Row>) => setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -119,9 +122,13 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
       }
       return { ...base, productId: Number(row.perfume) };
     });
+    setConfirming(items);
+  }
 
+  async function save(items: PurchaseItemInput[]) {
     try {
       const result = await addPurchase.mutateAsync({ requestId, purchaseDate: date, note: note.trim() || null, items });
+      setConfirming(null);
       toast(`Purchase saved: +${result.purchase.totalQuantity} units added to stock`);
       onDone();
     } catch (error) {
@@ -133,6 +140,7 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
         const field = { mrpPaise: 'size', pricePaise: 'size', sizeMl: 'size', newProduct: 'perfume', productId: 'perfume', unitCostPaise: 'cost', totalCostPaise: 'cost' }[match[2]!] ?? match[2]!;
         mapped[`${match[1]}.${field}`] = message;
       }
+      setConfirming(null);
       if (Object.keys(mapped).length) setErrors(mapped);
       else toast(messageOf(error), 'error');
     }
@@ -308,6 +316,37 @@ function PurchaseForm({ perfumes, onDone }: { perfumes: Perfume[]; onDone: () =>
           Save purchase
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirming !== null}
+        title="Save this purchase?"
+        tone="primary"
+        confirmLabel="Yes, save purchase"
+        loading={addPurchase.isPending}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => confirming && void save(confirming)}
+        message={
+          <>
+            <ul className="space-y-1 text-fg">
+              {rows.map((row) => {
+                const cost = parseRupees(row.cost) ?? 0;
+                return (
+                  <li key={row.key} className="flex justify-between gap-3">
+                    <span className="min-w-0 truncate">
+                      {perfumeName(row.perfume)} · {sizeOf(row)?.sizeMl} ml × {row.quantity}
+                    </span>
+                    <span className="shrink-0 tabular-nums">{formatPaise(row.costMode === 'total' ? cost : cost * Number(row.quantity))}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-2 border-t border-border pt-2 font-medium text-fg">
+              {totalUnits} bottles · {formatPaise(totalCost)} · received {date}
+            </p>
+            <p className="mt-3">Check the costs carefully: they can’t be changed after saving. The bottles are added to stock straight away.</p>
+          </>
+        }
+      />
 
       {/* Sub-popups open above the purchase popup. */}
       <Modal size="md" open={creating?.kind === 'perfume'} onClose={() => setCreating(null)} title="New perfume" description="It will be saved together with this purchase.">

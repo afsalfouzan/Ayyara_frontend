@@ -2,6 +2,8 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export type GroupBy = 'day' | 'week' | 'month';
+/** Where sales were made: India (website and Indian offline sales) or the UK (offline only, no godown stock). */
+export type ReportRegion = 'all' | 'india' | 'uk';
 
 export type Report = {
   range: { from: string; to: string };
@@ -26,6 +28,8 @@ export type Report = {
   products: { variantId: number; productName: string; sizeMl: number; units: number; revenue: number; online: number; offline: number; uk: number; share: number }[];
   orderStatus: { completed: number; inProgress: number; awaitingPayment: number; cancelled: number; expired: number; returned: number };
   stockFlow: { received: number; sold: number; cancelled: number; returned: number; adjusted: number; unitsSold: number };
+  /** Bottles received per size, and what was paid (null without permission to see costs): in the chosen period, and in total since the start. */
+  purchased: { variantId: number; productName: string; sizeMl: number; inPeriod: number; total: number; periodCostPaise: number | null; totalCostPaise: number | null }[];
   financial: null | {
     costOfGoodsPaise: number;
     grossProfitPaise: number | null;
@@ -59,10 +63,17 @@ export function useDashboard(from: string, to: string, groupBy: GroupBy) {
   });
 }
 
-export function useReport(from: string, to: string, groupBy: GroupBy) {
+/** The first day with any order or stock movement (null before there is any), where "All time" starts. */
+export function useFirstDay() {
+  return useQuery({ queryKey: ['report', 'first-day'], queryFn: () => api<{ firstDay: string | null }>('/admin/reports/first-day').then((d) => d.firstDay), staleTime: 5 * 60_000 });
+}
+
+/** Waits while `from` is empty (the period is still being worked out). */
+export function useReport(from: string, to: string, groupBy: GroupBy, region: ReportRegion = 'all') {
   return useQuery({
-    queryKey: ['report', from, to, groupBy],
-    queryFn: () => api<{ report: Report }>(`/admin/reports/summary?${params(from, to, groupBy)}`).then((d) => d.report),
+    enabled: Boolean(from),
+    queryKey: ['report', from, to, groupBy, region],
+    queryFn: () => api<{ report: Report }>(`/admin/reports/summary?${params(from, to, groupBy)}&region=${region}`).then((d) => d.report),
     placeholderData: keepPreviousData,
   });
 }

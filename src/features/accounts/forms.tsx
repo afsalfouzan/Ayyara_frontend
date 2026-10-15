@@ -2,6 +2,7 @@ import { clsx } from 'clsx';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select, Switch } from '@/components/ui/controls';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { Modal } from '@/components/ui/Modal';
@@ -120,6 +121,7 @@ function EntryForm({ state, accounts, categories, today, onDone }: { state: NonN
   const [description, setDescription] = useState('');
   const [entryDate, setEntryDate] = useState(today);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
   const account = accounts.find((a) => a.id === accountId);
   const parsed = readAmount(amount);
   const signed = 'paise' in parsed ? (out ? -parsed.paise : parsed.paise) : 0;
@@ -134,6 +136,12 @@ function EntryForm({ state, accounts, categories, today, onDone }: { state: NonN
     if (account?.kind === 'cash' && out && 'paise' in parsed && parsed.paise > account.balancePaise) problems.amountPaise = `Cash in hand is only ${formatPaise(account.balancePaise)}`;
     setErrors(problems);
     if (Object.keys(problems).length || !account || 'error' in parsed) return;
+    setConfirming(true);
+  }
+
+  async function save() {
+    setConfirming(false);
+    if (!account || 'error' in parsed) return;
     try {
       await add.mutateAsync({ requestId, accountId: account.id, direction: state.direction, amountPaise: parsed.paise, entryDate, category, description: description.trim() });
       toast(`${formatPaise(parsed.paise)} ${out ? 'paid from' : 'added to'} ${account.name}`);
@@ -173,6 +181,28 @@ function EntryForm({ state, accounts, categories, today, onDone }: { state: NonN
       </FormField>
       {account && signed !== 0 && <BalancePreview label={`${account.name} balance`} before={account.balancePaise} after={account.balancePaise + signed} />}
       <Actions onCancel={onDone} saving={add.isPending} label={out ? 'Save money out' : 'Save money in'} />
+      <ConfirmDialog
+        open={confirming}
+        title={account && 'paise' in parsed ? `${out ? 'Take' : 'Add'} ${formatPaise(parsed.paise)} ${out ? 'out of' : 'to'} ${account.name}?` : ''}
+        tone="primary"
+        confirmLabel={out ? 'Yes, save money out' : 'Yes, save money in'}
+        loading={add.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void save()}
+        message={
+          account && (
+            <>
+              <p className="text-fg">
+                {CATEGORY_LABEL[category] ?? category} · {description.trim()} · {formatDay(entryDate)}
+              </p>
+              <p className="mt-2 font-medium text-fg">
+                {account.name}: {formatPaise(account.balancePaise)} → {formatPaise(account.balancePaise + signed)}
+              </p>
+              <p className="mt-2">To undo it later you have to cancel the entry with a reason.</p>
+            </>
+          )
+        }
+      />
     </form>
   );
 }
@@ -201,6 +231,7 @@ function TransferForm({ state, accounts, today, onDone }: { state: NonNullable<T
   const [entryDate, setEntryDate] = useState(today);
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
   const from = accounts.find((a) => a.id === fromId);
   const to = accounts.find((a) => a.id === toId);
   const parsed = readAmount(amount);
@@ -217,6 +248,12 @@ function TransferForm({ state, accounts, today, onDone }: { state: NonNullable<T
     else if (from?.kind === 'cash' && parsed.paise > from.balancePaise) problems.amountPaise = `Cash in hand is only ${formatPaise(from.balancePaise)}`;
     setErrors(problems);
     if (Object.keys(problems).length || !from || !to || 'error' in parsed) return;
+    setConfirming(true);
+  }
+
+  async function save() {
+    setConfirming(false);
+    if (!from || !to || 'error' in parsed) return;
     try {
       await move.mutateAsync({ requestId, fromAccountId: from.id, toAccountId: to.id, amountPaise: parsed.paise, entryDate, note: note.trim() });
       toast(`${formatPaise(parsed.paise)} moved from ${from.name} to ${to.name}`);
@@ -261,6 +298,29 @@ function TransferForm({ state, accounts, today, onDone }: { state: NonNullable<T
         </div>
       )}
       <Actions onCancel={onDone} saving={move.isPending} label={from?.kind === 'cash' ? 'Save deposit' : 'Save transfer'} />
+      <ConfirmDialog
+        open={confirming}
+        title={from && to ? `Move ${formatPaise(paise)} from ${from.name} to ${to.name}?` : ''}
+        tone="primary"
+        confirmLabel={from?.kind === 'cash' ? 'Yes, save deposit' : 'Yes, save transfer'}
+        loading={move.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void save()}
+        message={
+          from &&
+          to && (
+            <>
+              <p className="font-medium text-fg">
+                {from.name}: {formatPaise(from.balancePaise)} → {formatPaise(from.balancePaise - paise)}
+              </p>
+              <p className="font-medium text-fg">
+                {to.name}: {formatPaise(to.balancePaise)} → {formatPaise(to.balancePaise + paise)}
+              </p>
+              <p className="mt-2">Check the direction: the money leaves {from.name}. To undo it later you have to cancel the entry with a reason.</p>
+            </>
+          )
+        }
+      />
     </form>
   );
 }
@@ -283,6 +343,7 @@ function MatchForm({ account, onDone }: { account: Account; onDone: () => void }
   const [actual, setActual] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const actualPaise = readSigned(actual);
   const difference = actualPaise == null ? null : actualPaise - account.balancePaise;
 
@@ -290,6 +351,14 @@ function MatchForm({ account, onDone }: { account: Account; onDone: () => void }
     event.preventDefault();
     if (actualPaise == null) return setError(cash ? 'Enter the cash you counted' : 'Enter the balance your bank shows');
     setError('');
+    // A correction changes the balance, so it is confirmed; a plain check that matches is not.
+    if (difference) setConfirming(true);
+    else await save();
+  }
+
+  async function save() {
+    setConfirming(false);
+    if (actualPaise == null) return;
     try {
       const result = await match.mutateAsync({ accountId: account.id, requestId, actualBalancePaise: actualPaise, note: note.trim() });
       toast(result.matched ? `${account.name} matches. Nothing to correct.` : `${account.name} corrected to ${formatPaise(result.balancePaise)}`);
@@ -330,6 +399,26 @@ function MatchForm({ account, onDone }: { account: Account; onDone: () => void }
           </>
         ))}
       <Actions onCancel={onDone} saving={match.isPending} label={difference ? 'Correct the balance' : 'Check'} />
+      <ConfirmDialog
+        open={confirming}
+        title={`Correct ${account.name} to ${formatPaise(actualPaise ?? 0)}?`}
+        tone="primary"
+        confirmLabel="Yes, correct the balance"
+        loading={match.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void save()}
+        message={
+          difference != null && (
+            <>
+              <p className="font-medium text-fg">
+                A correction line of {difference > 0 ? '+' : '−'}
+                {formatPaise(Math.abs(difference))} is added.
+              </p>
+              <p className="mt-2">Only do this once you are sure no expense, deposit or sale is missing: a correction can hide a real mistake.</p>
+            </>
+          )
+        }
+      />
     </form>
   );
 }

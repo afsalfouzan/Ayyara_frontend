@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select } from '@/components/ui/controls';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { Modal } from '@/components/ui/Modal';
@@ -129,6 +130,7 @@ function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable
   const [paidOn, setPaidOn] = useState(today);
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
 
   const account = accounts.find((a) => a.id === accountId);
   const parsed = readAmount(amount);
@@ -148,6 +150,12 @@ function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable
     else if (account.kind === 'cash' && toPay > account.balancePaise) problems.accountId = `Cash in hand is only ${formatPaise(account.balancePaise)}`;
     setErrors(problems);
     if (Object.keys(problems).length || !account || 'error' in parsed) return;
+    setConfirming(true);
+  }
+
+  async function payNow() {
+    setConfirming(false);
+    if (!account || 'error' in parsed) return;
     try {
       await pay.mutateAsync({ requestId, employeeId: employee.id, kind, ...(isSalary ? { periodMonth: month, advanceDeductedPaise: deducted } : {}), amountPaise: parsed.paise, accountId: account.id, paidOn, note: note.trim() });
       toast(isSalary ? `${employee.name}’s salary for ${monthName(month)} paid: ${formatPaise(toPay)}` : `${formatPaise(parsed.paise)} ${kind} given to ${employee.name}`);
@@ -220,6 +228,26 @@ function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable
           {isSalary ? `Pay ${formatPaise(toPay)}` : PAY_TITLE[kind]}
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirming}
+        title={isSalary ? `Pay ${formatPaise(toPay)} to ${employee.name}?` : `Give ${formatPaise(toPay)} ${kind} to ${employee.name}?`}
+        tone="primary"
+        confirmLabel={isSalary ? 'Yes, pay' : `Yes, give ${kind}`}
+        loading={pay.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void payNow()}
+        message={
+          account && (
+            <>
+              {isSalary && <p className="text-fg">Salary for {monthName(month)}{deducted > 0 ? `, after taking back ${formatPaise(deducted)} of advance` : ''}.</p>}
+              <p className="mt-2 font-medium text-fg">
+                {account.name}: {formatPaise(account.balancePaise)} → <span className={account.balancePaise - toPay < 0 ? 'text-rose-600' : undefined}>{formatPaise(account.balancePaise - toPay)}</span>
+              </p>
+              <p className="mt-2">{isSalary ? 'Each month can be paid once.' : 'This is recorded straight away.'} To undo it later you have to cancel the payment with a reason.</p>
+            </>
+          )
+        }
+      />
     </form>
   );
 }

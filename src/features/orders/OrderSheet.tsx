@@ -3,6 +3,7 @@ import { CreditCard, Lock, MapPin, PackageCheck, RefreshCw, RotateCcw, Truck, Wa
 import { useState, type FormEvent } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, TextArea } from '@/components/ui/controls';
 import { ErrorState } from '@/components/ui/DataState';
 import { Modal } from '@/components/ui/Modal';
@@ -47,8 +48,11 @@ function OrderBody({ order }: { order: OrderDetail }) {
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const fulfil = useUpdateFulfilment(order.id);
+  // Fulfilment only moves forward, so each step is confirmed first.
+  const [confirmStep, setConfirmStep] = useState<string | null>(null);
 
   async function step(status: string) {
+    setConfirmStep(null);
     try {
       await fulfil.mutateAsync({ status });
       toast(`Marked as ${FULFILMENT_LABEL[status as keyof typeof FULFILMENT_LABEL].toLowerCase()}`);
@@ -92,7 +96,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
                 Mark dispatched
               </Button>
             ) : (
-              <Button key={next} variant={next === 'packed' ? 'primary' : 'secondary'} loading={fulfil.isPending && fulfil.variables?.status === next} onClick={() => void step(next)}>
+              <Button key={next} variant={next === 'packed' ? 'primary' : 'secondary'} loading={fulfil.isPending && fulfil.variables?.status === next} onClick={() => setConfirmStep(next)}>
                 <PackageCheck className="size-4" aria-hidden />
                 Mark {FULFILMENT_LABEL[next].toLowerCase()}
               </Button>
@@ -207,6 +211,20 @@ function OrderBody({ order }: { order: OrderDetail }) {
       <CancelDialog order={order} open={cancelling} onClose={() => setCancelling(false)} />
       <RecordPaymentDialog order={order} open={recordingPayment} onClose={() => setRecordingPayment(false)} />
       <DispatchDialog order={order} open={dispatching} onClose={() => setDispatching(false)} />
+      <ConfirmDialog
+        open={confirmStep !== null}
+        title={confirmStep ? `Mark ${order.orderNumber} as ${FULFILMENT_LABEL[confirmStep as keyof typeof FULFILMENT_LABEL].toLowerCase()}?` : ''}
+        tone="primary"
+        confirmLabel="Yes, update order"
+        loading={fulfil.isPending}
+        onCancel={() => setConfirmStep(null)}
+        onConfirm={() => confirmStep && void step(confirmStep)}
+        message={
+          confirmStep === 'delivered'
+            ? `This can’t be undone.${uk ? '' : ' If we have the customer’s email address, they are emailed that it was delivered (unless that email is turned off in Notifications).'}`
+            : 'This can’t be undone: an order’s progress only moves forward.'
+        }
+      />
     </div>
   );
 }
@@ -268,6 +286,7 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
   const [tracking, setTracking] = useState('');
   const [charge, setCharge] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -279,6 +298,12 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
     if (chargePaise != null && (Number.isNaN(chargePaise) || chargePaise < 0)) next.charge = 'Enter an amount';
     setErrors(next);
     if (Object.keys(next).length) return;
+    setConfirming(true);
+  }
+
+  async function dispatch() {
+    setConfirming(false);
+    const chargePaise = charge.trim() ? parseRupees(charge) : null;
     try {
       await fulfil.mutateAsync({ status: 'dispatched', courier: courier.trim(), trackingNumber: tracking.trim(), ...(chargePaise != null ? { courierChargePaise: chargePaise } : {}) });
       toast(`Order ${order.orderNumber} dispatched`);
@@ -313,6 +338,23 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
             Mark dispatched
           </Button>
         </div>
+        <ConfirmDialog
+          open={confirming}
+          title={`Dispatch ${order.orderNumber}?`}
+          tone="primary"
+          confirmLabel="Yes, mark dispatched"
+          loading={fulfil.isPending}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void dispatch()}
+          message={
+            <>
+              <p className="font-medium text-fg">
+                {courier.trim()} · tracking <span className="font-mono">{tracking.trim()}</span>
+              </p>
+              <p className="mt-2">Check the tracking number: if we have the customer’s email address, these details are emailed straight away (unless that email is turned off), and dispatch can’t be undone.</p>
+            </>
+          }
+        />
       </form>
     </Modal>
   );
@@ -480,6 +522,7 @@ function RefundForm({ order, onDone }: { order: OrderDetail; onDone: () => void 
   const canReturn = ['dispatched', 'delivered'].includes(order.fulfilmentStatus);
   const [stockAction, setStockAction] = useState<'none' | 'cancel_restock' | 'returned'>('none');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
 
   const options = [
     { value: 'none' as const, label: 'Refund money only', hint: 'Stock is not changed.', enabled: true },
@@ -498,6 +541,12 @@ function RefundForm({ order, onDone }: { order: OrderDetail; onDone: () => void 
     if (reason.trim().length < 3) next.reason = 'Give a reason';
     setErrors(next);
     if (Object.keys(next).length) return;
+    setConfirming(true);
+  }
+
+  async function refundNow() {
+    setConfirming(false);
+    const paise = parseRupees(amount);
     try {
       const { refund } = await create.mutateAsync({ amountPaise: paise!, reason: reason.trim(), stockAction, idempotencyKey });
       toast(refund.razorpayRefundId ? `Refund of ${formatPaise(paise!)} sent to Razorpay — it will show as refunded once the bank confirms.` : 'Refund recorded but Razorpay didn’t respond. Use “Check status” in a moment.');
@@ -548,6 +597,20 @@ function RefundForm({ order, onDone }: { order: OrderDetail; onDone: () => void 
           Refund {formatPaise(parseRupees(amount) || 0)}
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirming}
+        title={`Refund ${formatPaise(parseRupees(amount) || 0)} to the customer?`}
+        confirmLabel="Yes, refund"
+        loading={create.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => void refundNow()}
+        message={
+          <>
+            <p className="font-medium text-fg">{options.find((option) => option.value === stockAction)?.label}</p>
+            <p className="mt-2">The money is sent back through Razorpay straight away. A refund can’t be stopped or undone once sent.</p>
+          </>
+        }
+      />
     </form>
   );
 }
@@ -556,10 +619,16 @@ function RecordPaymentDialog({ order, open, onClose }: { order: OrderDetail; ope
   const record = useRecordOfflinePayment(order.id);
   const [method, setMethod] = useState<OfflineMethod>('cash');
   const [reference, setReference] = useState('');
+  const [confirming, setConfirming] = useState(false);
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
     event.stopPropagation();
+    setConfirming(true);
+  }
+
+  async function markPaid() {
+    setConfirming(false);
     try {
       await record.mutateAsync({ method, reference: reference.trim() });
       toast(`${formatPaise(order.totalPaise)} received by ${OFFLINE_METHOD_LABEL[method]}`);
@@ -598,6 +667,16 @@ function RecordPaymentDialog({ order, open, onClose }: { order: OrderDetail; ope
           <Button type="submit" loading={record.isPending}>
             Mark as paid
           </Button>
+          <ConfirmDialog
+            open={confirming}
+            title={`Mark ${formatPaise(order.totalPaise)} as received by ${OFFLINE_METHOD_LABEL[method]}?`}
+            tone="primary"
+            confirmLabel="Yes, mark as paid"
+            loading={record.isPending}
+            onCancel={() => setConfirming(false)}
+            onConfirm={() => void markPaid()}
+            message={`${order.orderNumber} is marked paid and the money is added to ${method === 'cash' ? 'Cash in hand' : 'the bank account that receives offline money'} in Accounts.`}
+          />
         </div>
       </form>
     </Modal>
