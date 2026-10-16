@@ -176,6 +176,13 @@ export type Payroll = {
   summary: { employees: number; monthlyBillPaise: number; paidCount: number; paidOutPaise: number; advanceOutstandingPaise: number };
 };
 
+/** An account a salary can be paid from. The balance is null for staff who may not see accounts. */
+export type PayAccount = { id: number; name: string; kind: 'bank' | 'cash'; openingDate: string; isActive: boolean; balancePaise: number | null };
+
+export function useSalaryAccounts(enabled: boolean) {
+  return useQuery({ queryKey: ['finance', 'salary-accounts'], queryFn: () => api<{ accounts: PayAccount[]; today: string }>('/admin/finance/salary-accounts'), enabled });
+}
+
 export function usePayroll(month: string) {
   return useQuery({ queryKey: ['finance', 'payroll', month], queryFn: () => api<Payroll>(`/admin/finance/employees?month=${month}`), placeholderData: keepPreviousData });
 }

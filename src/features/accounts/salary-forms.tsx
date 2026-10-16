@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput } from '@/lib/money';
-import { monthName, useCreateEmployee, usePaySalary, useUpdateEmployee, type Account, type Employee, type SalaryKind } from './api';
+import { monthName, useCreateEmployee, usePaySalary, useUpdateEmployee, type Employee, type PayAccount, type SalaryKind } from './api';
 import { AmountInput, earliestDateHint, readAmount } from './forms';
 
 /* ── Add / edit an employee ───────────────────────────────────────────── */
@@ -108,7 +108,7 @@ const PAY_HELP: Record<SalaryKind, string> = {
   bonus: 'Extra pay on top of salary. It is never taken back.',
 };
 
-export function PayDialog({ state, month, accounts, today, onClose }: { state: PayDialogState; month: string; accounts: Account[]; today: string; onClose: () => void }) {
+export function PayDialog({ state, month, accounts, today, onClose }: { state: PayDialogState; month: string; accounts: PayAccount[]; today: string; onClose: () => void }) {
   return (
     <Modal size="md" open={state != null} onClose={onClose} title={state ? `${PAY_TITLE[state.kind]} · ${state.employee.name}` : ''} description={state ? PAY_HELP[state.kind] : undefined}>
       {state && <PayForm key={`${state.kind}-${state.employee.id}-${month}`} state={state} month={month} accounts={accounts} today={today} onDone={onClose} />}
@@ -116,7 +116,7 @@ export function PayDialog({ state, month, accounts, today, onClose }: { state: P
   );
 }
 
-function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable<PayDialogState>; month: string; accounts: Account[]; today: string; onDone: () => void }) {
+function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable<PayDialogState>; month: string; accounts: PayAccount[]; today: string; onDone: () => void }) {
   const pay = usePaySalary();
   const { kind, employee } = state;
   const active = accounts.filter((a) => a.isActive);
@@ -147,7 +147,8 @@ function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable
     else if (deducted > outstanding) problems.advanceDeductedPaise = `Only ${formatPaise(outstanding)} is left to take back`;
     else if (deducted > gross) problems.advanceDeductedPaise = 'Can’t be more than the salary';
     if (!account) problems.accountId = 'Choose the account to pay from';
-    else if (account.kind === 'cash' && toPay > account.balancePaise) problems.accountId = `Cash in hand is only ${formatPaise(account.balancePaise)}`;
+    // Staff who can't see balances are still protected: the server refuses to take more cash than there is.
+    else if (account.kind === 'cash' && account.balancePaise !== null && toPay > account.balancePaise) problems.accountId = `Cash in hand is only ${formatPaise(account.balancePaise)}`;
     setErrors(problems);
     if (Object.keys(problems).length || !account || 'error' in parsed) return;
     setConfirming(true);
@@ -188,7 +189,7 @@ function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable
           <Select id="pay-account" className="w-full" value={accountId ?? ''} onChange={(event) => setAccountId(Number(event.target.value))}>
             {active.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.name} · {formatPaise(a.balancePaise)}
+                {a.balancePaise === null ? a.name : `${a.name} · ${formatPaise(a.balancePaise)}`}
               </option>
             ))}
           </Select>
@@ -240,9 +241,13 @@ function PayForm({ state, month, accounts, today, onDone }: { state: NonNullable
           account && (
             <>
               {isSalary && <p className="text-fg">Salary for {monthName(month)}{deducted > 0 ? `, after taking back ${formatPaise(deducted)} of advance` : ''}.</p>}
-              <p className="mt-2 font-medium text-fg">
-                {account.name}: {formatPaise(account.balancePaise)} → <span className={account.balancePaise - toPay < 0 ? 'text-rose-600' : undefined}>{formatPaise(account.balancePaise - toPay)}</span>
-              </p>
+              {account.balancePaise === null ? (
+                <p className="mt-2 font-medium text-fg">Paid from {account.name}.</p>
+              ) : (
+                <p className="mt-2 font-medium text-fg">
+                  {account.name}: {formatPaise(account.balancePaise)} → <span className={account.balancePaise - toPay < 0 ? 'text-rose-600' : undefined}>{formatPaise(account.balancePaise - toPay)}</span>
+                </p>
+              )}
               <p className="mt-2">{isSalary ? 'Each month can be paid once.' : 'This is recorded straight away.'} To undo it later you have to cancel the payment with a reason.</p>
             </>
           )

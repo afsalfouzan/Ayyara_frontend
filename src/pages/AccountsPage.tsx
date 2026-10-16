@@ -341,7 +341,7 @@ export default function AccountsPage() {
           <StatTile label="Offline received" value={formatPaise(summary.offlinePaise)} hint="Cash, UPI and card sales" icon={Store} color="emerald" highlight />
           <StatTile label="Other money in" value={formatPaise(summary.otherIncomePaise)} hint="Added by hand" icon={ArrowDownLeft} color="teal" />
           <StatTile label="Expenses" value={formatPaise(summary.expensesPaise)} hint="Paid out with a description" icon={ReceiptText} color="rose" />
-          <StatTile label="Salaries" value={formatPaise(summary.salariesPaise)} hint="Salary, advances and bonuses" icon={Wallet} color="purple" link={{ to: '/salaries', label: 'Salaries' }} />
+          <StatTile label="Salaries" value={formatPaise(summary.salariesPaise)} hint="Salary, advances and bonuses" icon={Wallet} color="purple" link={can('salaries.view') ? { to: '/salaries', label: 'Salaries' } : undefined} />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">

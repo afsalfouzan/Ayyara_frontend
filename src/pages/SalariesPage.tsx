@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { StatTile } from '@/components/ui/StatTile';
 import { toast } from '@/components/ui/Toast';
-import { monthName, shiftMonth, useOverview, usePayroll, useReverseSalary, useSalaryPayments, type Employee, type SalaryKind, type SalaryPayment } from '@/features/accounts/api';
+import { monthName, shiftMonth, usePayroll, useReverseSalary, useSalaryAccounts, useSalaryPayments, type Employee, type SalaryKind, type SalaryPayment } from '@/features/accounts/api';
 import { ReasonDialog } from '@/features/accounts/forms';
 import { EmployeeDialog, PayDialog, type EmployeeDialogState, type PayDialogState } from '@/features/accounts/salary-forms';
 import { useSession } from '@/features/auth/session';
@@ -18,7 +18,6 @@ import { messageOf } from '@/lib/errors';
 import { formatPaise } from '@/lib/money';
 
 const KIND_LABEL: Record<SalaryKind, string> = { salary: 'Salary', advance: 'Advance', bonus: 'Bonus' };
-const NO_RANGE = { from: '', to: '' };
 
 function MonthStatus({ employee }: { employee: Employee }) {
   const salary = employee.month.salary;
@@ -70,20 +69,21 @@ function RowActions({ employee, onPay, onEdit }: { employee: Employee; onPay: (k
 
 export default function SalariesPage() {
   const { can } = useSession();
-  const canManage = can('accounts.manage');
+  const canManage = can('salaries.manage');
   const thisMonth = istToday().slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
   const payroll = usePayroll(month);
   const payments = useSalaryPayments(month);
-  const overview = useOverview(NO_RANGE);
+  // Accounts to pay from: only needed by those who pay, and without balances unless they may see accounts.
+  const payFrom = useSalaryAccounts(canManage);
   const reverse = useReverseSalary();
 
   const [employeeDialog, setEmployeeDialog] = useState<EmployeeDialogState>(null);
   const [payDialog, setPayDialog] = useState<PayDialogState>(null);
   const [cancelPayment, setCancelPayment] = useState<SalaryPayment | null>(null);
 
-  const accounts = overview.data?.accounts ?? [];
-  const today = overview.data?.today ?? istToday();
+  const accounts = payFrom.data?.accounts ?? [];
+  const today = payFrom.data?.today ?? istToday();
   const summary = payroll.data?.summary;
   const people = payroll.data?.items ?? [];
   const active = people.filter((p) => p.isActive);

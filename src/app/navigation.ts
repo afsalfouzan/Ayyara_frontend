@@ -145,7 +145,7 @@ export const navigation: NavGroup[] = [
         path: '/salaries',
         label: 'Salaries',
         icon: Wallet,
-        permission: 'accounts.view',
+        permission: 'salaries.view',
         description: 'Staff salaries, advances and bonuses.',
         capabilities: [],
         phase: 8,
