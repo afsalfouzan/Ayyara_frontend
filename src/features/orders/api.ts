@@ -51,6 +51,8 @@ export type OrderDetail = OrderSummary & {
   refundablePaise: number;
   nextFulfilmentSteps: ('processing' | 'packed' | 'dispatched' | 'delivered')[];
   canCancel: boolean;
+  /** Refunded in full but never sent: can be cancelled with its bottles put back in stock. */
+  canCancelRefunded: boolean;
   canRecordPayment: boolean;
   /** False for UK sales, which have no invoice. */
   hasInvoice: boolean;
@@ -109,6 +111,7 @@ export function useSetCourierCharge(id: number) {
   });
 }
 export const useCancelOrder = (id: number) => useOrderMutation<{ reason: string }>(id, 'cancel');
+export const useCancelRefundedOrder = (id: number) => useOrderMutation<{ reason: string }>(id, 'cancel-refunded');
 
 export const useRecordOfflinePayment = (id: number) => useOrderMutation<{ method: OfflineMethod; reference?: string }>(id, 'offline-payment');
 export const useCancelOfflineOrder = (id: number) => useOrderMutation<{ reason: string }>(id, 'offline-cancel');

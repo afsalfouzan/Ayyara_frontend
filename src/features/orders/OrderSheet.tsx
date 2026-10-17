@@ -15,7 +15,7 @@ import { formatDateTime } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 import { methodLabel, PAYMENT_STATUS_LABEL, REFUND_STATUS_LABEL, STOCK_ACTION_LABEL, useCreateRefund, useSyncRefund } from '@/features/payments/api';
 import { paiseToInput, parseRupees } from '@/lib/money';
-import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useOrder, useRecordOfflinePayment, useSetCourierCharge, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
+import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useCancelRefundedOrder, useOrder, useRecordOfflinePayment, useSetCourierCharge, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
 import { InvoiceButton } from './invoice';
 import { WhatsAppActions } from './WhatsAppActions';
 import { FULFILMENT_LABEL, HISTORY_LABEL, OrderStateBadge, PAYMENT_LABEL } from './labels';
@@ -44,7 +44,9 @@ function OrderBody({ order }: { order: OrderDetail }) {
   const canCancelHere = order.canCancel && (offline ? can('orders.create_offline') : canUpdate);
   const canRecordPayment = order.canRecordPayment && can('orders.create_offline');
   const showSteps = canUpdate && order.nextFulfilmentSteps.length > 0;
+  const canCancelRefunded = order.canCancelRefunded && canUpdate;
   const [cancelling, setCancelling] = useState(false);
+  const [cancellingRefunded, setCancellingRefunded] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const fulfil = useUpdateFulfilment(order.id);
@@ -67,7 +69,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
         {offline && <Badge tone="info">{uk ? 'UK sale' : 'Offline order'}</Badge>}
         <OrderStateBadge order={order} />
         {/* The state badge already says paid / awaiting payment; only add refund information. */}
-        {(order.paymentStatus === 'refunded' || order.paymentStatus === 'partially_refunded') && <Badge tone="warning">{PAYMENT_LABEL[order.paymentStatus]}</Badge>}
+        {(order.paymentStatus === 'refunded' || order.paymentStatus === 'partially_refunded') && !order.canCancelRefunded && <Badge tone="warning">{PAYMENT_LABEL[order.paymentStatus]}</Badge>}
         <InvoiceButton order={order} label="Download invoice" className="ml-auto" />
       </div>
 
@@ -79,6 +81,16 @@ function OrderBody({ order }: { order: OrderDetail }) {
         <p className="rounded-lg bg-warning-bg px-3 py-2.5 text-sm text-warning">
           Stock is reserved until {formatDateTime(order.reservationExpiresAt)}. If payment isn’t received by then, the order expires and the stock is released automatically.
         </p>
+      )}
+
+      {canCancelRefunded && (
+        <section className="space-y-2 rounded-xl border border-warning/40 bg-warning-bg p-3">
+          <p className="text-sm text-warning">The money was refunded in full and nothing was sent, but the order is still open and its bottles are still counted as sold.</p>
+          <Button variant="secondary" onClick={() => setCancellingRefunded(true)}>
+            <XCircle className="size-4" aria-hidden />
+            Cancel order and put bottles back in stock
+          </Button>
+        </section>
       )}
 
       {(showSteps || canCancelHere || canRecordPayment) && (
@@ -209,6 +221,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
       </section>
 
       <CancelDialog order={order} open={cancelling} onClose={() => setCancelling(false)} />
+      <CancelRefundedDialog order={order} open={cancellingRefunded} onClose={() => setCancellingRefunded(false)} />
       <RecordPaymentDialog order={order} open={recordingPayment} onClose={() => setRecordingPayment(false)} />
       <DispatchDialog order={order} open={dispatching} onClose={() => setDispatching(false)} />
       <ConfirmDialog
@@ -226,6 +239,44 @@ function OrderBody({ order }: { order: OrderDetail }) {
         }
       />
     </div>
+  );
+}
+
+/** Closes an order that was refunded in full before anything was sent, and puts its bottles back. No money moves. */
+function CancelRefundedDialog({ order, open, onClose }: { order: OrderDetail; open: boolean; onClose: () => void }) {
+  const cancel = useCancelRefundedOrder(order.id);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string>();
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (reason.trim().length < 3) return setError('Give a reason');
+    try {
+      await cancel.mutateAsync({ reason: reason.trim() });
+      toast(`Order ${order.orderNumber} cancelled; bottles back in stock`);
+      onClose();
+    } catch (err) {
+      setError(fieldErrorsOf(err).reason ?? messageOf(err));
+    }
+  }
+
+  return (
+    <Modal size="md" open={open} onClose={onClose} title={`Cancel ${order.orderNumber}?`} description="The customer already has their money back. This closes the order and puts its bottles back in stock. No money moves. This can’t be undone.">
+      <form onSubmit={submit} className="space-y-4">
+        <FormField label="Reason" htmlFor="cancel-refunded-reason" error={error}>
+          <TextArea id="cancel-refunded-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+        </FormField>
+        <div className="flex justify-end gap-2 border-t border-border pt-4">
+          <Button variant="secondary" onClick={onClose}>
+            Keep order
+          </Button>
+          <Button type="submit" variant="danger" loading={cancel.isPending}>
+            Cancel and restock
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -544,6 +595,9 @@ function RefundForm({ order, onDone }: { order: OrderDetail; onDone: () => void 
     setConfirming(true);
   }
 
+  // Refunding everything as "money only" before dispatch usually means the order should have been cancelled.
+  const fullMoneyOnlyBeforeDispatch = stockAction === 'none' && canCancel && parseRupees(amount) === order.refundablePaise;
+
   async function refundNow() {
     setConfirming(false);
     const paise = parseRupees(amount);
@@ -563,6 +617,11 @@ function RefundForm({ order, onDone }: { order: OrderDetail; onDone: () => void 
       </FormField>
       <fieldset>
         <legend className="mb-2 text-sm font-medium">What about the bottles?</legend>
+        {fullMoneyOnlyBeforeDispatch && (
+          <p className="mb-2 rounded-lg bg-warning-bg px-3 py-2 text-xs text-warning">
+            You’re refunding the whole amount and this order hasn’t been dispatched. If the customer won’t receive anything, choose “Cancel the order and put items back in stock”, so the order closes and the bottles return to stock.
+          </p>
+        )}
         <div className="space-y-2">
           {options.map((option) => (
             <label key={option.value} className={clsx('flex gap-3 rounded-lg border p-3 text-sm', option.enabled ? 'cursor-pointer border-border hover:bg-surface-muted' : 'cursor-not-allowed border-border opacity-50', stockAction === option.value && 'border-fg')}>
@@ -607,6 +666,11 @@ function RefundForm({ order, onDone }: { order: OrderDetail; onDone: () => void 
         message={
           <>
             <p className="font-medium text-fg">{options.find((option) => option.value === stockAction)?.label}</p>
+            {fullMoneyOnlyBeforeDispatch && (
+              <p className="mt-2 rounded-lg bg-warning-bg px-3 py-2 text-warning">
+                This refunds everything but keeps the order open and the bottles counted as sold. If nothing will be sent, go back and choose “Cancel the order and put items back in stock”.
+              </p>
+            )}
             <p className="mt-2">The money is sent back through Razorpay straight away. A refund can’t be stopped or undone once sent.</p>
           </>
         }

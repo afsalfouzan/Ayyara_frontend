@@ -29,7 +29,10 @@ export function OrderStateBadge({ order }: { order: Pick<OrderSummary, 'status' 
   if (order.status === 'expired') return <Badge tone="neutral">Expired — not paid</Badge>;
   if (order.status === 'pending_payment') return <Badge tone="warning">Awaiting payment</Badge>;
   const tone = { unfulfilled: 'info', processing: 'info', packed: 'info', dispatched: 'success', delivered: 'success', cancelled: 'neutral', returned: 'danger' } as const;
-  return <Badge tone={tone[order.fulfilmentStatus]}>{order.fulfilmentStatus === 'unfulfilled' ? 'Paid · to pack' : FULFILMENT_LABEL[order.fulfilmentStatus]}</Badge>;
+  // Money returned in full before anything was sent: there is nothing to pack.
+  if (order.paymentStatus === 'refunded' && ['unfulfilled', 'processing', 'packed'].includes(order.fulfilmentStatus)) return <Badge tone="warning">Refunded · not sent</Badge>;
+  if (order.fulfilmentStatus === 'unfulfilled') return <Badge tone="info">{order.paymentStatus === 'partially_refunded' ? 'Partly refunded · to pack' : 'Paid · to pack'}</Badge>;
+  return <Badge tone={tone[order.fulfilmentStatus]}>{FULFILMENT_LABEL[order.fulfilmentStatus]}</Badge>;
 }
 
 export const HISTORY_LABEL: Record<string, string> = {
