@@ -140,5 +140,21 @@ export function useCreateOfflineOrder() {
   });
 }
 
+/** An item sold only in the UK (e.g. a special edition): a name and its sizes. Price and cost are typed on each sale. */
+export type UkItem = { id: number; name: string; variants: { id: number; sizeMl: number }[] };
+
+export function useUkItems(enabled: boolean) {
+  return useQuery({ queryKey: ['uk-items'], queryFn: () => api<{ items: UkItem[] }>('/admin/uk-items').then((d) => d.items), enabled });
+}
+
+/** Creates a UK item (or adds a size to one with that name) and answers with the size to put on the sale line. */
+export function useCreateUkItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; sizeMl: number }) => api<{ productId: number; variantId: number; items: UkItem[] }>('/admin/uk-items', { method: 'POST', body: input }),
+    onSuccess: (result) => queryClient.setQueryData(['uk-items'], result.items),
+  });
+}
+
 /** Notes in the order history that a WhatsApp message was opened or copied for the customer. */
 export const useNoteWhatsApp = (id: number) => useOrderMutation<{ kind: 'invoice' | 'dispatch'; via: 'whatsapp' | 'copy' }>(id, 'whatsapp-sent');

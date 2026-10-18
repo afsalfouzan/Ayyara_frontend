@@ -7,16 +7,20 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { controlClass, FormField, Select, Switch, TextArea } from '@/components/ui/controls';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
-import { useStock, type Perfume } from '@/features/stock/api';
+import { useStock } from '@/features/stock/api';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
 import { INDIAN_STATES } from '@/lib/states';
 import { InvoiceButton } from './invoice';
-import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, REGION_LABEL, useCreateOfflineOrder, type OfflineMethod, type OrderDetail, type SellingRegion } from './api';
+import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, REGION_LABEL, useCreateOfflineOrder, useCreateUkItem, useUkItems, type OfflineMethod, type OrderDetail, type SellingRegion, type UkItem } from './api';
 
 /** `cost`: UK only, what each bottle actually cost (India's cost comes from the purchases in Stock). */
 type Row = { key: string; perfumeId: string; variantId: string; quantity: string; price: string; cost: string };
 const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfumeId: '', variantId: '', quantity: '1', price: '', cost: '' });
+/** Something that can go on a sale line: a perfume from Stock, or (UK only) an item sold only in the UK. */
+type Choice = { id: number; name: string; ukOnly?: boolean; variants: { id: number; sizeMl: number; pricePaise: number; mrpPaise: number; stock: { available: number } }[] };
+/** UK items have no Stock price or stock count; those are never used for UK lines. */
+const ukChoice = (item: UkItem): Choice => ({ id: item.id, name: item.name, ukOnly: true, variants: item.variants.map((v) => ({ id: v.id, sizeMl: v.sizeMl, pricePaise: 0, mrpPaise: 0, stock: { available: 0 } })) });
 /** Line layout on wide screens; UK lines have one more column, for the cost. */
 const GRID = { india: 'lg:grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem]', uk: 'lg:grid-cols-[minmax(9rem,1.3fr)_minmax(7rem,1fr)_4.5rem_7rem_7rem_6.5rem_2.5rem]' } as const;
 const today = () => new Date().toLocaleDateString('en-CA');
@@ -32,7 +36,7 @@ export function CreateOfflineOrderDialog({ open, onClose, onCreated }: { open: b
 function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated: (order: OrderDetail) => void }) {
   const stock = useStock();
   const create = useCreateOfflineOrder();
-  const perfumes: Perfume[] = stock.data?.items ?? [];
+  const perfumes: Choice[] = stock.data?.items ?? [];
   // One id per form: a double-click or retry creates one order.
   const [saved, setSaved] = useState<OrderDetail | null>(null);
   const [requestId] = useState(() => crypto.randomUUID());
@@ -40,6 +44,11 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   // India is the usual case. A UK sale only records the rupee amount: no stock change, no price limit, no delivery.
   const [region, setRegion] = useState<SellingRegion>('india');
   const uk = region === 'uk';
+  const ukItems = useUkItems(uk);
+  const ukChoices = (ukItems.data ?? []).map(ukChoice);
+  // UK lines can use any perfume in Stock and any UK item; India lines only Stock.
+  const choices = uk ? [...perfumes, ...ukChoices] : perfumes;
+  const [newItemOpen, setNewItemOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '' });
   const [delivery, setDelivery] = useState(false);
@@ -52,7 +61,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   const [confirming, setConfirming] = useState(false);
 
   const update = (key: string, patch: Partial<Row>) => setRows((current) => current.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const perfumeOf = (row: Row) => perfumes.find((p) => String(p.id) === row.perfumeId);
+  const perfumeOf = (row: Row) => choices.find((p) => String(p.id) === row.perfumeId);
   const variantOf = (row: Row) => perfumeOf(row)?.variants.find((v) => String(v.id) === row.variantId);
   const lineTotal = (row: Row) => {
     const price = parseRupees(row.price);
@@ -71,7 +80,14 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
     setErrors({});
     if (next === 'uk') setDelivery(false);
     // India prices come from Stock; a UK price is whatever it was sold for, so it starts empty.
-    setRows((current) => current.map((row) => ({ ...row, cost: '', price: next === 'india' ? paiseToInput(variantOf(row)?.pricePaise ?? null) : '' })));
+    setRows((current) =>
+      current.map((row) =>
+        // A UK item can't be sold in India, so its line is cleared when switching.
+        next === 'india' && perfumeOf(row)?.ukOnly
+          ? { ...row, perfumeId: '', variantId: '', cost: '', price: '' }
+          : { ...row, cost: '', price: next === 'india' ? paiseToInput(variantOf(row)?.pricePaise ?? null) : '' },
+      ),
+    );
   }
 
   async function submit() {
@@ -210,11 +226,30 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
                 <Cell label="Perfume" className="col-span-2 lg:col-span-1">
                   <Select aria-label="Perfume" className="w-full" value={row.perfumeId} onChange={(e) => update(row.key, { perfumeId: e.target.value, variantId: '', price: '' })}>
                     <option value="">{stock.isPending ? 'Loading…' : 'Choose perfume…'}</option>
-                    {perfumes.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
+                    {uk && ukChoices.length > 0 ? (
+                      <>
+                        <optgroup label="Perfumes in Stock">
+                          {perfumes.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="UK items">
+                          {ukChoices.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </>
+                    ) : (
+                      perfumes.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))
+                    )}
                   </Select>
                 </Cell>
                 <Cell label="Size" error={errors[`${i}.variant`]} className="col-span-2 sm:col-span-1">
@@ -263,10 +298,18 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
           })}
         </ul>
         <div className="mt-3 flex items-center justify-between">
-          <Button variant="secondary" size="sm" onClick={() => setRows((c) => [...c, emptyRow()])} disabled={rows.length >= 30}>
-            <Plus className="size-3.5" aria-hidden />
-            Add perfume
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setRows((c) => [...c, emptyRow()])} disabled={rows.length >= 30}>
+              <Plus className="size-3.5" aria-hidden />
+              Add perfume
+            </Button>
+            {uk && (
+              <Button variant="secondary" size="sm" onClick={() => setNewItemOpen(true)} disabled={rows.length >= 30 && rows.every((r) => r.perfumeId)}>
+                <Plus className="size-3.5" aria-hidden />
+                New UK item
+              </Button>
+            )}
+          </div>
           <div className="text-right text-sm">
             <p>
               Order total <strong className="ml-1 text-base tabular-nums">{formatPaise(total)}</strong>
@@ -397,6 +440,18 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
           </Button>
         </div>
       </div>
+      <NewUkItemDialog
+        open={newItemOpen}
+        onClose={() => setNewItemOpen(false)}
+        onCreated={({ productId, variantId }) => {
+          // Fill the first empty line, or add one.
+          setRows((current) => {
+            const empty = current.find((row) => !row.perfumeId);
+            const filled = { perfumeId: String(productId), variantId: String(variantId), price: '', cost: '' };
+            return empty ? current.map((row) => (row.key === empty.key ? { ...row, ...filled } : row)) : [...current, { ...emptyRow(), ...filled }];
+          });
+        }}
+      />
       <ConfirmDialog
         open={confirming}
         title={uk ? 'Save this UK sale?' : 'Save this offline order?'}
@@ -447,5 +502,59 @@ function Cell({ label, error, className, children }: { label: string; error?: st
       {children}
       {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
+  );
+}
+
+/** A name and a size for an item sold only in the UK; it is then offered on every UK sale. */
+function NewUkItemDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (created: { productId: number; variantId: number }) => void }) {
+  const create = useCreateUkItem();
+  const [name, setName] = useState('');
+  const [size, setSize] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function close() {
+    setName('');
+    setSize('');
+    setErrors({});
+    onClose();
+  }
+
+  async function save() {
+    const next: Record<string, string> = {};
+    if (name.trim().length < 2) next.name = 'Enter the item’s name';
+    if (!/^\d+$/.test(size) || Number(size) < 1 || Number(size) > 1000) next.sizeMl = 'Enter the size in ml';
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    try {
+      const created = await create.mutateAsync({ name: name.trim(), sizeMl: Number(size) });
+      toast(`${name.trim()} ${size} ml added to UK items`);
+      onCreated(created);
+      close();
+    } catch (error) {
+      const fieldErrors = fieldErrorsOf(error);
+      if (Object.keys(fieldErrors).length) setErrors(fieldErrors);
+      else toast(messageOf(error), 'error');
+    }
+  }
+
+  return (
+    <Modal size="md" open={open} onClose={close} title="New UK item" description="An item sold only in the UK, such as a special edition. It isn’t added to Stock or the website. You type its sold price and cost on each sale.">
+      <div className="space-y-4">
+        <FormField label="Name" htmlFor="uk-item-name" error={errors.name}>
+          <input id="uk-item-name" className={`${controlClass} w-full`} value={name} maxLength={120} placeholder="e.g. Special Edition Oud" onChange={(e) => setName(e.target.value)} autoFocus />
+        </FormField>
+        <FormField label="Size (ml)" htmlFor="uk-item-size" error={errors.sizeMl}>
+          <input id="uk-item-size" inputMode="numeric" className={`${controlClass} w-full sm:w-40`} value={size} placeholder="e.g. 100" onChange={(e) => setSize(e.target.value.replace(/\D/g, ''))} />
+        </FormField>
+        <div className="flex justify-end gap-2 border-t border-border pt-4">
+          <Button variant="secondary" onClick={close}>
+            Cancel
+          </Button>
+          <Button onClick={() => void save()} loading={create.isPending}>
+            Add item
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
