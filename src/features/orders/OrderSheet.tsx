@@ -130,6 +130,7 @@ function OrderBody({ order }: { order: OrderDetail }) {
             <li key={item.id} className="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">
               <span>
                 {item.productName} · {item.sizeMl} ML <span className="text-fg-muted">× {item.quantity}</span>
+                {item.unitCostPaise != null && <span className="block text-xs text-fg-muted">Cost {formatPaise(item.unitCostPaise)} each</span>}
               </span>
               <span className="tabular-nums">{formatPaise(item.lineTotalPaise)}</span>
             </li>
@@ -144,6 +145,22 @@ function OrderBody({ order }: { order: OrderDetail }) {
             <dt>Total</dt>
             <dd className="tabular-nums">{formatPaise(order.totalPaise)}</dd>
           </div>
+          {/* UK sales carry the cost entered with them; shown to staff who may see costs. */}
+          {order.items.some((item) => item.unitCostPaise != null) && (() => {
+            const cost = order.items.reduce((sum, item) => sum + (item.unitCostPaise ?? 0) * item.quantity, 0);
+            return (
+              <>
+                <div className="flex justify-between text-fg-muted">
+                  <dt>Cost of bottles</dt>
+                  <dd className="tabular-nums">{formatPaise(cost)}</dd>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <dt>Profit on this sale</dt>
+                  <dd className={clsx('tabular-nums', order.totalPaise - cost < 0 ? 'text-danger' : 'text-success')}>{formatPaise(order.totalPaise - cost)}</dd>
+                </div>
+              </>
+            );
+          })()}
         </dl>
       </section>
 

@@ -14,8 +14,11 @@ import { INDIAN_STATES } from '@/lib/states';
 import { InvoiceButton } from './invoice';
 import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, REGION_LABEL, useCreateOfflineOrder, type OfflineMethod, type OrderDetail, type SellingRegion } from './api';
 
-type Row = { key: string; perfumeId: string; variantId: string; quantity: string; price: string };
-const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfumeId: '', variantId: '', quantity: '1', price: '' });
+/** `cost`: UK only, what each bottle actually cost (India's cost comes from the purchases in Stock). */
+type Row = { key: string; perfumeId: string; variantId: string; quantity: string; price: string; cost: string };
+const emptyRow = (): Row => ({ key: crypto.randomUUID(), perfumeId: '', variantId: '', quantity: '1', price: '', cost: '' });
+/** Line layout on wide screens; UK lines have one more column, for the cost. */
+const GRID = { india: 'lg:grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem]', uk: 'lg:grid-cols-[minmax(9rem,1.3fr)_minmax(7rem,1fr)_4.5rem_7rem_7rem_6.5rem_2.5rem]' } as const;
 const today = () => new Date().toLocaleDateString('en-CA');
 
 export function CreateOfflineOrderDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (order: OrderDetail) => void }) {
@@ -56,6 +59,11 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
     return price && !Number.isNaN(price) && /^\d+$/.test(row.quantity) ? price * Number(row.quantity) : 0;
   };
   const total = rows.reduce((sum, row) => sum + lineTotal(row), 0);
+  const lineCost = (row: Row) => {
+    const cost = parseRupees(row.cost);
+    return cost != null && !Number.isNaN(cost) && /^\d+$/.test(row.quantity) ? cost * Number(row.quantity) : 0;
+  };
+  const totalCost = rows.reduce((sum, row) => sum + lineCost(row), 0);
 
   function changeRegion(next: SellingRegion) {
     if (next === region) return;
@@ -63,7 +71,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
     setErrors({});
     if (next === 'uk') setDelivery(false);
     // India prices come from Stock; a UK price is whatever it was sold for, so it starts empty.
-    setRows((current) => current.map((row) => ({ ...row, price: next === 'india' ? paiseToInput(variantOf(row)?.pricePaise ?? null) : '' })));
+    setRows((current) => current.map((row) => ({ ...row, cost: '', price: next === 'india' ? paiseToInput(variantOf(row)?.pricePaise ?? null) : '' })));
   }
 
   async function submit() {
@@ -77,6 +85,10 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       const price = parseRupees(row.price);
       if (price == null || Number.isNaN(price) || price < 100) next[`${i}.price`] = uk ? 'Enter the sold price' : 'Enter price';
       else if (!uk && variant && price > variant.mrpPaise) next[`${i}.price`] = `Max MRP ${formatPaise(variant.mrpPaise)}`;
+      if (uk) {
+        const cost = parseRupees(row.cost);
+        if (row.cost.trim() === '' || cost == null || Number.isNaN(cost) || cost < 0) next[`${i}.cost`] = 'Enter what each bottle cost';
+      }
     });
     if (new Set(rows.map((r) => r.variantId).filter(Boolean)).size !== rows.filter((r) => r.variantId).length) next.items = 'Each perfume and size can appear only once — combine the quantities';
     if (customer.name.trim().length < 2) next.name = 'Enter the customer’s name';
@@ -102,7 +114,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
         requestId,
         region,
         saleDate,
-        items: rows.map((row) => ({ variantId: Number(row.variantId), quantity: Number(row.quantity), unitPricePaise: parseRupees(row.price)! })),
+        items: rows.map((row) => ({ variantId: Number(row.variantId), quantity: Number(row.quantity), unitPricePaise: parseRupees(row.price)!, ...(uk ? { unitCostPaise: parseRupees(row.cost)! } : {}) })),
         customer: { name: customer.name.trim(), ...(customer.phone.trim() ? { phone: customer.phone.trim() } : {}), ...(customer.email.trim() ? { email: customer.email.trim() } : {}) },
         delivery: delivery && !uk ? { required: true, ...address } : { required: false },
         payment: paid ? { status: 'paid', method, reference: reference.trim() } : { status: 'unpaid' },
@@ -116,7 +128,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       const mapped: Record<string, string> = {};
       for (const [key, message] of Object.entries(fieldErrors)) {
         const m = /^items\.(\d+)\.(\w+)/.exec(key);
-        if (m) mapped[`${m[1]}.${m[2] === 'unitPricePaise' ? 'price' : m[2] === 'quantity' ? 'quantity' : 'variant'}`] = message;
+        if (m) mapped[`${m[1]}.${m[2] === 'unitPricePaise' ? 'price' : m[2] === 'unitCostPaise' ? 'cost' : m[2] === 'quantity' ? 'quantity' : 'variant'}`] = message;
         else mapped[key.replace(/^(customer|delivery)\./, '')] = message;
       }
       if (Object.keys(mapped).length) setErrors(mapped);
@@ -174,16 +186,17 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
           ))}
         </div>
         <p className="mt-2 text-xs text-fg-muted">
-          {uk ? 'Type the amount it was sold for, in rupees. Godown stock is not changed, and no invoice or email is sent.' : 'Prices come from Stock, and the bottles are taken out of the godown when you save.'}
+          {uk ? 'Type the amount it was sold for and what each bottle cost, in rupees. Godown stock is not changed, and no invoice or email is sent.' : 'Prices come from Stock, and the bottles are taken out of the godown when you save.'}
         </p>
       </Section>
 
       <Section title="Perfumes">
-        <div className="mb-2 hidden grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem] gap-3 px-1 text-xs font-medium text-fg-subtle lg:grid">
+        <div className={clsx('mb-2 hidden gap-3 px-1 text-xs font-medium text-fg-subtle lg:grid', GRID[region])}>
           <span>Perfume</span>
           <span>Size</span>
           <span>Qty</span>
           <span>{uk ? 'Sold price each (₹)' : 'Price each (₹)'}</span>
+          {uk && <span>Cost each (₹)</span>}
           <span className="text-right">Total</span>
           <span />
         </div>
@@ -193,7 +206,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
             const perfume = perfumeOf(row);
             const variant = variantOf(row);
             return (
-              <li key={row.key} className="grid grid-cols-2 gap-3 rounded-xl border border-border p-3 lg:grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_5rem_7.5rem_6.5rem_2.5rem] lg:items-start lg:rounded-none lg:border-0 lg:p-0">
+              <li key={row.key} className={clsx('grid grid-cols-2 gap-3 rounded-xl border border-border p-3 lg:items-start lg:rounded-none lg:border-0 lg:p-0', GRID[region])}>
                 <Cell label="Perfume" className="col-span-2 lg:col-span-1">
                   <Select aria-label="Perfume" className="w-full" value={row.perfumeId} onChange={(e) => update(row.key, { perfumeId: e.target.value, variantId: '', price: '' })}>
                     <option value="">{stock.isPending ? 'Loading…' : 'Choose perfume…'}</option>
@@ -232,6 +245,11 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
                   <input aria-label={uk ? 'Sold price each' : 'Price each'} inputMode="decimal" placeholder={uk ? 'Amount in ₹' : undefined} className={`${controlClass} w-full`} value={row.price} disabled={!variant} onChange={(e) => update(row.key, { price: e.target.value })} />
                   {variant && !uk && <p className="mt-1 text-[0.6875rem] text-fg-subtle">MRP {formatPaise(variant.mrpPaise)}</p>}
                 </Cell>
+                {uk && (
+                  <Cell label="Cost each (₹)" error={errors[`${i}.cost`]}>
+                    <input aria-label="Cost each" inputMode="decimal" placeholder="Cost in ₹" className={`${controlClass} w-full`} value={row.cost} disabled={!variant} onChange={(e) => update(row.key, { cost: e.target.value })} />
+                  </Cell>
+                )}
                 <Cell label="Total" className="lg:text-right">
                   <p className="flex h-9 items-center text-sm font-medium tabular-nums lg:justify-end">{lineTotal(row) ? formatPaise(lineTotal(row)) : '—'}</p>
                 </Cell>
@@ -249,9 +267,16 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
             <Plus className="size-3.5" aria-hidden />
             Add perfume
           </Button>
-          <p className="text-sm">
-            Order total <strong className="ml-1 text-base tabular-nums">{formatPaise(total)}</strong>
-          </p>
+          <div className="text-right text-sm">
+            <p>
+              Order total <strong className="ml-1 text-base tabular-nums">{formatPaise(total)}</strong>
+            </p>
+            {uk && (
+              <p className="mt-0.5 text-xs text-fg-muted tabular-nums">
+                Cost {formatPaise(totalCost)} · Profit <span className={total - totalCost < 0 ? 'text-danger' : 'text-success'}>{formatPaise(total - totalCost)}</span>
+              </p>
+            )}
+          </div>
         </div>
       </Section>
 
@@ -396,7 +421,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
               {customer.name.trim()} · {formatPaise(total)} · {paid ? `paid by ${OFFLINE_METHOD_LABEL[method]}` : 'not paid yet'}
             </p>
             <p className="mt-3">
-              {uk ? 'Godown stock is not changed.' : 'The bottles are taken out of godown stock straight away.'}
+              {uk ? `Cost ${formatPaise(totalCost)}, profit ${formatPaise(total - totalCost)}. Godown stock is not changed.` : 'The bottles are taken out of godown stock straight away.'}
               {paid ? ` The money is added to ${method === 'cash' ? 'Cash in hand' : 'the bank account that receives offline money'}.` : ''} Once saved, the order can be cancelled but not edited.
             </p>
           </>

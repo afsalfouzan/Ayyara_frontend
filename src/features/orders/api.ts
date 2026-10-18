@@ -44,7 +44,8 @@ export type OrderSummary = {
 };
 
 export type OrderDetail = OrderSummary & {
-  items: { id: number; productName: string; sizeMl: number; quantity: number; unitPricePaise: number; lineTotalPaise: number }[];
+  /** `unitCostPaise`: UK sales only, and only for staff who may see purchase costs. */
+  items: { id: number; productName: string; sizeMl: number; quantity: number; unitPricePaise: number; lineTotalPaise: number; unitCostPaise?: number | null }[];
   history: { id: number; field: 'status' | 'payment' | 'fulfilment'; fromStatus: string | null; toStatus: string; note: string | null; actor: string | null; createdAt: string }[];
   payments: { id: number; provider: 'razorpay' | 'offline'; reference: string | null; razorpayPaymentId: string | null; amountPaise: number; status: string; method: string | null; errorDescription: string | null; createdAt: string }[];
   refunds: { id: number; amountPaise: number; status: 'pending' | 'processed' | 'failed'; reason: string; stockAction: 'none' | 'cancel_restock' | 'returned'; automatic: boolean; razorpayRefundId: string | null; processedAt: string | null; createdAt: string }[];
@@ -124,7 +125,7 @@ export type OfflineOrderInput = {
   requestId: string;
   region: SellingRegion;
   saleDate: string;
-  items: { variantId: number; quantity: number; unitPricePaise: number }[];
+  items: { variantId: number; quantity: number; unitPricePaise: number; unitCostPaise?: number }[];
   customer: { name: string; phone?: string; email?: string };
   delivery: { required: false } | { required: true; addressLine1: string; addressLine2: string; city: string; state: string; pincode: string };
   payment: { status: 'unpaid' } | { status: 'paid'; method: OfflineMethod; reference: string };
