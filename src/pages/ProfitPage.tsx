@@ -110,6 +110,8 @@ export default function ProfitPage() {
             <Breakdown title="This month" subtitle={`${formatDay(data.startDate > `${data.today.slice(0, 7)}-01` ? data.startDate : `${data.today.slice(0, 7)}-01`)} until today`} amounts={data.monthTotals} resultLabel={['Profit this month', 'Loss this month']} />
           </div>
 
+          <Investments entries={data.investments} total={data.position.investedPaise} onAdd={() => setInvestmentDialog({ open: true, entry: null })} onEdit={(entry) => setInvestmentDialog({ open: true, entry })} />
+
           <Panel>
             <PanelHeader
               icon={CalendarDays}
@@ -128,8 +130,6 @@ export default function ProfitPage() {
               loading={profit.isFetching}
             />
           </Panel>
-
-          <Investments entries={data.investments} total={data.position.investedPaise} onAdd={() => setInvestmentDialog({ open: true, entry: null })} onEdit={(entry) => setInvestmentDialog({ open: true, entry })} />
 
           <p className="px-1 text-xs text-gray-500">
             A sale counts on the day its payment was received. Monthly salaries, rent, electricity and maintenance are shared out over the days of their month. The cost of each bottle comes from the purchase it belonged to, newest purchase first. Courier charges come
