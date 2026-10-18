@@ -13,7 +13,7 @@ import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { StatTile } from '@/components/ui/StatTile';
 import { toast } from '@/components/ui/Toast';
 import { COST_LINES, costsOf, downloadReport, useDeleteInvestment, useProfit, useSaveInvestment, useSendReport, useSetStartDate, type Investment, type ProfitAmounts, type ProfitDay, type ProfitOverview } from '@/features/profit/api';
-import { FILTER_PRESETS } from '@/features/reports/range';
+import { FILTER_PRESETS, presetRange } from '@/features/reports/range';
 import { formatDay, istToday } from '@/lib/dates';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
@@ -25,7 +25,13 @@ const profitClass = (paise: number) => (paise < 0 ? 'text-rose-600' : 'text-emer
 type InvestmentDialogState = { open: boolean; entry: Investment | null };
 
 export default function ProfitPage() {
-  const [range, setRange] = useState({ from: '', to: '' });
+  // The day-by-day table opens on the last 7 days and asks the server for 7 more each time "See previous 7 days" is pressed.
+  // The date picker can still choose any range, and clearing it shows every day.
+  const [range, setRange] = useState(() => {
+    const { from, to } = presetRange('7d');
+    return { from, to };
+  });
+  const loadPreviousWeek = () => setRange((current) => ({ from: shiftDay(current.from, -DAYS_PER_STEP), to: current.to }));
   const profit = useProfit(range);
   const [investmentDialog, setInvestmentDialog] = useState<InvestmentDialogState>({ open: false, entry: null });
   const [startOpen, setStartOpen] = useState(false);
@@ -112,7 +118,15 @@ export default function ProfitPage() {
               description="Each day’s sales, costs and profit, and what was still to earn back at the end of it."
               actions={<DateRangePicker label="Days to show" className="w-full sm:w-64" value={range} presets={FILTER_PRESETS} clearable onChange={(next) => setRange({ from: next.from, to: next.to })} />}
             />
-            <DayTable days={data.days} totals={data.rangeTotals} busyDate={busyDate} onDownload={download} />
+            <DayTable
+              days={data.days}
+              totals={data.rangeTotals}
+              busyDate={busyDate}
+              onDownload={download}
+              // Earlier days exist only while the shown range starts after the first day profit is counted from.
+              onLoadMore={range.from && data.range.from > data.startDate ? loadPreviousWeek : undefined}
+              loading={profit.isFetching}
+            />
           </Panel>
 
           <Investments entries={data.investments} total={data.position.investedPaise} onAdd={() => setInvestmentDialog({ open: true, entry: null })} onEdit={(entry) => setInvestmentDialog({ open: true, entry })} />
@@ -220,8 +234,32 @@ function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title
   );
 }
 
-function DayTable({ days, totals, busyDate, onDownload }: { days: ProfitDay[]; totals: ProfitAmounts; busyDate: string | null; onDownload: (date: string) => void }) {
+/** How many days each "See previous" press adds. */
+const DAYS_PER_STEP = 7;
+
+/** "2026-10-18" moved by a number of days. */
+function shiftDay(isoDay: string, by: number) {
+  const date = new Date(`${isoDay}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + by);
+  return date.toISOString().slice(0, 10);
+}
+
+function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: { days: ProfitDay[]; totals: ProfitAmounts; busyDate: string | null; onDownload: (date: string) => void; onLoadMore?: () => void; loading: boolean }) {
   if (days.length === 0) return <EmptyState icon={CalendarDays} title="No days to show" description="Choose different dates, or change the day profit is counted from." />;
+  const more = (
+    <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+      <p className="text-xs text-fg-muted">
+        {days.length} {days.length === 1 ? 'day' : 'days'}: {formatDay(days.at(-1)!.date)} to {formatDay(days[0]!.date)}
+      </p>
+      {onLoadMore ? (
+        <Button size="sm" variant="secondary" loading={loading} onClick={onLoadMore}>
+          See previous {DAYS_PER_STEP} days
+        </Button>
+      ) : (
+        <span className="text-xs text-fg-subtle">No earlier days</span>
+      )}
+    </div>
+  );
   const reportButton = (date: string) => (
     <Button size="sm" variant="ghost" aria-label={`Download the report for ${formatDay(date)}`} loading={busyDate === date} onClick={() => onDownload(date)}>
       <Download className="size-3.5" aria-hidden />
@@ -256,7 +294,7 @@ function DayTable({ days, totals, busyDate, onDownload }: { days: ProfitDay[]; t
           </tbody>
           <tfoot>
             <tr className="border-t border-border bg-gray-50 font-semibold">
-              <td className="px-5 py-3">Total for these days</td>
+              <td className="px-5 py-3">Total for these {days.length} days</td>
               <td className="px-3 py-3 text-right tabular-nums">{formatPaise(totals.salesPaise)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{formatPaise(costsOf(totals))}</td>
               <td className={clsx('px-3 py-3 text-right tabular-nums', profitClass(totals.profitPaise))}>{signed(totals.profitPaise)}</td>
@@ -282,6 +320,7 @@ function DayTable({ days, totals, busyDate, onDownload }: { days: ProfitDay[]; t
           </li>
         ))}
       </ul>
+      {more}
     </>
   );
 }
