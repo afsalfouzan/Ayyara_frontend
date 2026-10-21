@@ -20,7 +20,14 @@ import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
 
 /** A signed amount: losses and costs read with a minus sign. */
 const signed = (paise: number) => (paise < 0 ? `−${formatPaise(-paise)}` : formatPaise(Math.abs(paise)));
-const profitClass = (paise: number) => (paise < 0 ? 'text-rose-600' : 'text-emerald-700');
+const profitClass = (paise: number) => (paise < 0 ? 'text-rose-600' : paise > 0 ? 'text-emerald-700' : 'text-fg-muted');
+
+/** What was still to earn back at the end of a day, in words. Nothing is owed before anything was invested. */
+function earnBackText(day: Pick<ProfitDay, 'investedPaise' | 'remainingPaise'>) {
+  if (day.investedPaise <= 0) return 'No investment yet';
+  if (day.remainingPaise > 0) return formatPaise(day.remainingPaise);
+  return day.remainingPaise < 0 ? `Earned back · ${formatPaise(-day.remainingPaise)} extra` : 'Earned back';
+}
 
 type InvestmentDialogState = { open: boolean; entry: Investment | null };
 
@@ -118,6 +125,7 @@ export default function ProfitPage() {
               iconClass="text-indigo-600"
               title="Day by day"
               description="Each day’s sales, costs and profit, and what was still to earn back at the end of it."
+              stackActions
               actions={<DateRangePicker label="Days to show" className="w-full sm:w-64" value={range} presets={FILTER_PRESETS} clearable onChange={(next) => setRange({ from: next.from, to: next.to })} />}
             />
             <DayTable
@@ -247,12 +255,12 @@ function shiftDay(isoDay: string, by: number) {
 function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: { days: ProfitDay[]; totals: ProfitAmounts; busyDate: string | null; onDownload: (date: string) => void; onLoadMore?: () => void; loading: boolean }) {
   if (days.length === 0) return <EmptyState icon={CalendarDays} title="No days to show" description="Choose different dates, or change the day profit is counted from." />;
   const more = (
-    <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+    <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <p className="text-xs text-fg-muted">
         {days.length} {days.length === 1 ? 'day' : 'days'}: {formatDay(days.at(-1)!.date)} to {formatDay(days[0]!.date)}
       </p>
       {onLoadMore ? (
-        <Button size="sm" variant="secondary" loading={loading} onClick={onLoadMore}>
+        <Button size="sm" variant="secondary" className="w-full whitespace-nowrap sm:w-auto" loading={loading} onClick={onLoadMore}>
           See previous {DAYS_PER_STEP} days
         </Button>
       ) : (
@@ -287,7 +295,7 @@ function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: {
                 <td className="px-3 py-3 text-right tabular-nums">{formatPaise(day.salesPaise)}</td>
                 <td className="px-3 py-3 text-right text-gray-600 tabular-nums">{formatPaise(costsOf(day))}</td>
                 <td className={clsx('px-3 py-3 text-right font-semibold tabular-nums', profitClass(day.profitPaise))}>{signed(day.profitPaise)}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{day.remainingPaise > 0 ? formatPaise(day.remainingPaise) : <span className="text-emerald-700">Earned back · +{formatPaise(-day.remainingPaise)}</span>}</td>
+                <td className={clsx('px-3 py-3 text-right tabular-nums', day.investedPaise > 0 && day.remainingPaise <= 0 && 'text-emerald-700', day.investedPaise <= 0 && 'text-fg-muted')}>{earnBackText(day)}</td>
                 <td className="px-5 py-2 text-right">{reportButton(day.date)}</td>
               </tr>
             ))}
@@ -303,22 +311,53 @@ function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: {
           </tfoot>
         </table>
       </div>
+      {/* Phones: one card per day with labelled figures, then the total for the days shown. */}
       <ul className="divide-y divide-border md:hidden">
         {days.map((day) => (
-          <li key={day.date} className="flex items-start gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1">
+          <li key={day.date} className="px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold">{formatDay(day.date)}</p>
-              <p className="text-xs text-fg-muted tabular-nums">
-                Sales {formatPaise(day.salesPaise)} · Costs {formatPaise(costsOf(day))}
-              </p>
-              <p className="text-xs text-fg-muted tabular-nums">{day.remainingPaise > 0 ? `Still to earn back ${formatPaise(day.remainingPaise)}` : `Earned back · +${formatPaise(-day.remainingPaise)}`}</p>
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-medium text-fg-subtle uppercase">Profit</span>
+                <span className={clsx('text-base font-bold tabular-nums', profitClass(day.profitPaise))}>{signed(day.profitPaise)}</span>
+              </div>
             </div>
-            <div className="text-right">
-              <p className={clsx('text-sm font-bold tabular-nums', profitClass(day.profitPaise))}>{signed(day.profitPaise)}</p>
-              {reportButton(day.date)}
-            </div>
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              <div>
+                <dt className="text-fg-subtle">Sales</dt>
+                <dd className="font-medium tabular-nums">{formatPaise(day.salesPaise)}</dd>
+              </div>
+              <div>
+                <dt className="text-fg-subtle">Costs</dt>
+                <dd className="font-medium tabular-nums">{formatPaise(costsOf(day))}</dd>
+              </div>
+              <div className="col-span-2 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <dt className="text-fg-subtle">Still to earn back</dt>
+                  <dd className={clsx('font-medium tabular-nums', day.investedPaise > 0 && day.remainingPaise <= 0 && 'text-emerald-700', day.investedPaise <= 0 && 'text-fg-muted')}>{earnBackText(day)}</dd>
+                </div>
+                {reportButton(day.date)}
+              </div>
+            </dl>
           </li>
         ))}
+        <li className="bg-gray-50 px-4 py-3.5">
+          <p className="text-xs font-semibold text-fg-muted">Total for these {days.length} days</p>
+          <dl className="mt-1.5 grid grid-cols-3 gap-3 text-xs">
+            <div>
+              <dt className="text-fg-subtle">Sales</dt>
+              <dd className="text-sm font-semibold tabular-nums">{formatPaise(totals.salesPaise)}</dd>
+            </div>
+            <div>
+              <dt className="text-fg-subtle">Costs</dt>
+              <dd className="text-sm font-semibold tabular-nums">{formatPaise(costsOf(totals))}</dd>
+            </div>
+            <div>
+              <dt className="text-fg-subtle">Profit</dt>
+              <dd className={clsx('text-sm font-bold tabular-nums', profitClass(totals.profitPaise))}>{signed(totals.profitPaise)}</dd>
+            </div>
+          </dl>
+        </li>
       </ul>
       {more}
     </>

@@ -9,9 +9,10 @@ export function Panel({ className, ...props }: ComponentPropsWithoutRef<'section
 }
 
 /** Card header: uppercase title with an optional coloured icon, subtitle and actions. */
-export function PanelHeader({ title, description, actions, icon: Icon, iconClass = 'text-gray-500' }: { title: string; description?: string; actions?: ReactNode; icon?: LucideIcon; iconClass?: string }) {
+/** `stackActions`: on phones the actions (e.g. a wide date picker) drop below the title instead of squeezing it. */
+export function PanelHeader({ title, description, actions, icon: Icon, iconClass = 'text-gray-500', stackActions = false }: { title: string; description?: string; actions?: ReactNode; icon?: LucideIcon; iconClass?: string; stackActions?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 pt-4 pb-3">
+    <div className={clsx('flex gap-4 border-b border-gray-100 px-5 pt-4 pb-3', stackActions ? 'flex-col sm:flex-row sm:items-start sm:justify-between' : 'items-start justify-between')}>
       <div className="min-w-0">
         <h2 className="flex items-center gap-2 text-[13px] font-bold tracking-wide text-neutral-900 uppercase">
           {Icon && <Icon className={clsx('size-4 shrink-0', iconClass)} aria-hidden />}
