@@ -43,6 +43,11 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
                       UK
                     </Badge>
                   )}
+                  {order.isPromotion && (
+                    <Badge tone="warning" className="ml-2">
+                      Promotion
+                    </Badge>
+                  )}
                   <p className="mt-0.5 text-[11px] text-fg-muted tabular-nums">{formatDateTime(order.createdAt)}</p>
                 </td>
                 <td className="px-3 py-3">
@@ -83,6 +88,7 @@ export function OrdersTable({ orders, onOpen }: { orders: OrderSummary[]; onOpen
                 <p className="flex items-center gap-2 font-mono text-sm font-bold text-neutral-900">
                   {order.orderNumber}
                   {order.sellingRegion === 'uk' && <Badge tone="info">UK</Badge>}
+                  {order.isPromotion && <Badge tone="warning">Promotion</Badge>}
                 </p>
                 <p className="mt-0.5 text-[11px] text-fg-muted tabular-nums">{formatDateTime(order.createdAt)}</p>
               </div>

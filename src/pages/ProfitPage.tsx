@@ -221,7 +221,7 @@ function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title
             <div className="flex items-baseline justify-between gap-3 pl-3 text-xs text-gray-500">
               <dt>Website {formatPaise(amounts.onlineSalesPaise)} · Offline {formatPaise(amounts.offlineSalesPaise)}</dt>
             </div>
-            {COST_LINES.filter(({ key }) => key !== 'stockLossPaise' || amounts.stockLossPaise !== 0).map(({ key, label }) => (
+            {COST_LINES.filter(({ key }) => (key !== 'stockLossPaise' || amounts.stockLossPaise !== 0) && (key !== 'promotionCostPaise' || amounts.promotionCostPaise !== 0)).map(({ key, label }) => (
               <div key={key} className="flex items-baseline justify-between gap-3 text-gray-600">
                 <dt>Less: {label}</dt>
                 <dd className="tabular-nums">{signed(-amounts[key])}</dd>
@@ -247,6 +247,12 @@ function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title
               <div className="flex items-baseline justify-between gap-3 pl-3 text-orange-700">
                 <dt>Waiting for payment</dt>
                 <dd className="tabular-nums">{amounts.bottlesWaiting} · {formatPaise(amounts.waitingPaise)} to collect</dd>
+              </div>
+            )}
+            {amounts.bottlesPromotion > 0 && (
+              <div className="flex items-baseline justify-between gap-3 text-gray-600">
+                <dt>Given for promotion</dt>
+                <dd className="tabular-nums">{amounts.bottlesPromotion}</dd>
               </div>
             )}
             {amounts.bottlesUk > 0 && (

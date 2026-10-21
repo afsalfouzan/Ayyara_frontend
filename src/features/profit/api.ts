@@ -14,6 +14,7 @@ export type ProfitAmounts = {
   fixedCostsPaise: number;
   expensesPaise: number;
   stockLossPaise: number;
+  promotionCostPaise: number;
   profitPaise: number;
   /** Online money received that Razorpay has not yet paid into the bank. */
   notCreditedPaise: number;
@@ -24,6 +25,7 @@ export type ProfitAmounts = {
   bottlesWaiting: number;
   waitingPaise: number;
   bottlesUk: number;
+  bottlesPromotion: number;
   /** Money received in the period for bills made on earlier days. */
   receivedEarlierPaise: number;
 };
@@ -53,6 +55,7 @@ export const COST_LINES: { key: keyof ProfitAmounts; label: string }[] = [
   { key: 'salariesPaise', label: 'Salaries (daily share and bonuses)' },
   { key: 'fixedCostsPaise', label: 'Rent, electricity and maintenance (daily share)' },
   { key: 'expensesPaise', label: 'Other expenses' },
+  { key: 'promotionCostPaise', label: 'Bottles given for promotion' },
   { key: 'stockLossPaise', label: 'Stock written off' },
 ];
 export const costsOf = (amounts: ProfitAmounts) => amounts.salesPaise - amounts.profitPaise;

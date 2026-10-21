@@ -117,8 +117,8 @@ export function usePhotos(id: number) {
 export function useCorrectStock() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (input: { variantId: number; quantity: number; reasonCode: string; note: string; requestId: string }) =>
-      api<StockOverview>('/admin/stock/adjustments', { method: 'POST', body: input }),
+    mutationFn: (input: { variantId: number; quantity: number; reasonCode: string; note: string; givenTo?: string; requestId: string }) =>
+      api<StockOverview & { orderNumber?: string }>('/admin/stock/adjustments', { method: 'POST', body: input }),
     onSuccess: (data) => refresh(data),
   });
 }

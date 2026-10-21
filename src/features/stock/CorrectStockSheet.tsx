@@ -25,12 +25,14 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
   const [counted, setCounted] = useState(String(target.variant.stock.onHand));
   const [reasonCode, setReasonCode] = useState('');
   const [note, setNote] = useState('');
+  const [givenTo, setGivenTo] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
 
   const current = target.variant.stock.onHand;
   const next = /^\d+$/.test(counted) ? Number(counted) : null;
   const change = next == null ? 0 : next - current;
+  const promotion = reasonCode === 'promotion';
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -39,7 +41,10 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
     else if (change === 0) problems.counted = 'This is the same as the current quantity';
     else if (next < target.variant.stock.reserved) problems.counted = `${target.variant.stock.reserved} units are reserved for customer orders`;
     if (!reasonCode) problems.reasonCode = 'Choose a reason';
-    if (note.trim().length < 3) problems.note = 'Explain what happened';
+    if (promotion) {
+      if (change > 0) problems.counted = 'A promotion takes bottles out of the godown';
+      if (givenTo.trim().length < 2) problems.givenTo = 'Enter who it was given to';
+    } else if (note.trim().length < 3) problems.note = 'Explain what happened';
     setErrors(problems);
     if (Object.keys(problems).length) return;
     setConfirming(true);
@@ -48,8 +53,8 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
   async function save() {
     setConfirming(false);
     try {
-      await correct.mutateAsync({ variantId: target.variant.id, quantity: change, reasonCode, note: note.trim(), requestId });
-      toast(`${target.name} ${target.variant.sizeMl} ML is now ${next}`);
+      const result = await correct.mutateAsync({ variantId: target.variant.id, quantity: change, reasonCode, note: note.trim(), ...(promotion ? { givenTo: givenTo.trim() } : {}), requestId });
+      toast(result.orderNumber ? `${target.name} ${target.variant.sizeMl} ML is now ${next}. Invoice ${result.orderNumber} is in Offline orders.` : `${target.name} ${target.variant.sizeMl} ML is now ${next}`);
       onDone();
     } catch (error) {
       if (error instanceof ApiError && error.code === 'INSUFFICIENT_STOCK') setErrors({ counted: 'The quantity changed in the meantime. Close and try again.' });
@@ -82,7 +87,12 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
           ))}
         </Select>
       </FormField>
-      <FormField label="Details" htmlFor="note" error={errors.note} hint="Saved permanently in the history.">
+      {promotion && (
+        <FormField label="Given to" htmlFor="given-to" error={errors.givenTo} hint="Printed on the no-charge invoice. The bottle’s cost is counted as a promotion cost in Profit.">
+          <input id="given-to" className={`${controlClass} w-full`} maxLength={120} value={givenTo} onChange={(e) => setGivenTo(e.target.value)} />
+        </FormField>
+      )}
+      <FormField label={promotion ? 'Details (optional)' : 'Details'} htmlFor="note" error={errors.note} hint="Saved permanently in the history.">
         <TextArea id="note" rows={2} maxLength={255} value={note} onChange={(e) => setNote(e.target.value)} />
       </FormField>
       <div className="flex justify-end gap-2 border-t border-border pt-5">
@@ -95,9 +105,9 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
       </div>
       <ConfirmDialog
         open={confirming}
-        title={`Change ${target.name} ${target.variant.sizeMl} ML to ${next}?`}
+        title={promotion ? `Give ${-change} × ${target.name} ${target.variant.sizeMl} ML for promotion?` : `Change ${target.name} ${target.variant.sizeMl} ML to ${next}?`}
         tone="primary"
-        confirmLabel="Yes, change quantity"
+        confirmLabel={promotion ? 'Yes, give for promotion' : 'Yes, change quantity'}
         loading={correct.isPending}
         onCancel={() => setConfirming(false)}
         onConfirm={() => void save()}
@@ -107,6 +117,7 @@ function CorrectForm({ target, reasons, onDone }: { target: NonNullable<CorrectT
               {current} → {next} ({change > 0 ? `+${change}` : change} units)
             </p>
             <p className="mt-2">Customers can buy only what is in the godown, so the website changes straight away. The correction stays in the stock history.</p>
+            {promotion && <p className="mt-2">A no-charge invoice “Given for promotion” is created for {givenTo.trim()}, and the cost of the bottle is counted in Profit.</p>}
           </>
         }
       />

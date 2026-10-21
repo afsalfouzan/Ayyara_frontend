@@ -17,6 +17,8 @@ export type OrderSummary = {
   orderNumber: string;
   channel: Channel;
   sellingRegion: SellingRegion;
+  /** Bottles given away: a no-charge bill. */
+  isPromotion: boolean;
   deliveryRequired: boolean;
   customerId: number;
   customerName: string;
