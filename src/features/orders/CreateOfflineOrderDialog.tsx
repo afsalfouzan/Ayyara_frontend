@@ -427,7 +427,7 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       </FormField>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
-        <label className="flex items-center gap-2 text-sm text-fg-muted">
+        <label className="text-nowrap flex items-center gap-2 text-sm text-fg-muted">
           Sale date
           <DatePicker label="Sale date" max={today()} className="w-full sm:w-60" value={saleDate} onChange={setSaleDate} />
         </label>
