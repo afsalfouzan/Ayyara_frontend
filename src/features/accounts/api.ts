@@ -18,7 +18,7 @@ export type Account = {
   entryCount: number;
 };
 
-export type EntryType = 'razorpay_settlement' | 'offline_sale' | 'offline_refund' | 'income' | 'expense' | 'salary' | 'advance' | 'bonus' | 'transfer' | 'adjustment';
+export type EntryType = 'razorpay_settlement' | 'offline_sale' | 'offline_refund' | 'income' | 'expense' | 'salary' | 'advance' | 'bonus' | 'transfer' | 'adjustment' | 'courier';
 
 export type Entry = {
   id: number;
@@ -37,7 +37,7 @@ export type Entry = {
   balanceAfterPaise: number;
 };
 
-export type MoneySummary = { onlinePaise: number; offlinePaise: number; otherIncomePaise: number; expensesPaise: number; salariesPaise: number; adjustmentsPaise: number; inPaise: number; outPaise: number };
+export type MoneySummary = { onlinePaise: number; offlinePaise: number; otherIncomePaise: number; expensesPaise: number; salariesPaise: number; courierPaise: number; adjustmentsPaise: number; inPaise: number; outPaise: number };
 
 export type RazorpayStatus = {
   configured: boolean;
@@ -70,6 +70,7 @@ export const TYPE_LABEL: Record<EntryType, string> = {
   bonus: 'Bonus',
   transfer: 'Transfer',
   adjustment: 'Correction',
+  courier: 'Courier',
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {

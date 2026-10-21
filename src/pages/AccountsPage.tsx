@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Banknote, Download, Globe, Landmark, Pencil, PiggyBank, Plus, ReceiptText, RefreshCw, Scale, Store, Undo2, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Banknote, Download, Globe, Landmark, Pencil, PiggyBank, Plus, ReceiptText, RefreshCw, Scale, Store, Truck, Undo2, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -336,11 +336,12 @@ export default function AccountsPage() {
             }}
           />
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
           <StatTile label="Online received" value={formatPaise(summary.onlinePaise)} hint="Razorpay payouts to the bank" icon={Globe} color="blue" highlight />
           <StatTile label="Offline received" value={formatPaise(summary.offlinePaise)} hint="Cash, UPI and card sales" icon={Store} color="emerald" highlight />
           <StatTile label="Other money in" value={formatPaise(summary.otherIncomePaise)} hint="Added by hand" icon={ArrowDownLeft} color="teal" />
           <StatTile label="Expenses" value={formatPaise(summary.expensesPaise)} hint="Paid out with a description" icon={ReceiptText} color="rose" />
+          <StatTile label="Courier" value={formatPaise(summary.courierPaise)} hint="Paid when orders are dispatched" icon={Truck} color="orange" />
           <StatTile label="Salaries" value={formatPaise(summary.salariesPaise)} hint="Salary, advances and bonuses" icon={Wallet} color="purple" link={can('salaries.view') ? { to: '/salaries', label: 'Salaries' } : undefined} />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">

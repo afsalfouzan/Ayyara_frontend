@@ -35,6 +35,8 @@ export type OrderSummary = {
   trackingNumber: string | null;
   /** What the shop paid the courier for this parcel; null until someone enters it. */
   courierChargePaise: number | null;
+  /** Where the courier charge was paid from; the money-out is in Accounts. */
+  courierPaidFrom: CourierPaidFrom | null;
   createdAt: string;
   paidAt: string | null;
   customerNotes: string;
@@ -49,6 +51,8 @@ export type OrderDetail = OrderSummary & {
   history: { id: number; field: 'status' | 'payment' | 'fulfilment'; fromStatus: string | null; toStatus: string; note: string | null; actor: string | null; createdAt: string }[];
   payments: { id: number; provider: 'razorpay' | 'offline'; reference: string | null; razorpayPaymentId: string | null; amountPaise: number; status: string; method: string | null; errorDescription: string | null; createdAt: string }[];
   refunds: { id: number; amountPaise: number; status: 'pending' | 'processed' | 'failed'; reason: string; stockAction: 'none' | 'cancel_restock' | 'returned'; automatic: boolean; razorpayRefundId: string | null; processedAt: string | null; createdAt: string }[];
+  /** The bank a courier charge is paid from (the one receiving offline payments); null when none is set. */
+  courierBankName: string | null;
   refundablePaise: number;
   nextFulfilmentSteps: ('processing' | 'packed' | 'dispatched' | 'delivered')[];
   canCancel: boolean;
@@ -94,20 +98,26 @@ function useOrderMutation<TInput>(id: number, path: string) {
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       void queryClient.invalidateQueries({ queryKey: ['stock'] });
       void queryClient.invalidateQueries({ queryKey: ['customers'] });
+      // A courier charge paid at dispatch changes account balances and profit.
+      void queryClient.invalidateQueries({ queryKey: ['finance'] });
+      void queryClient.invalidateQueries({ queryKey: ['profit'] });
     },
   });
 }
 
-export const useUpdateFulfilment = (id: number) => useOrderMutation<{ status: string; courier?: string; trackingNumber?: string; courierChargePaise?: number; note?: string }>(id, 'fulfilment');
+export type CourierPaidFrom = 'bank' | 'cash';
+
+export const useUpdateFulfilment = (id: number) => useOrderMutation<{ status: string; courier?: string; trackingNumber?: string; courierChargePaise?: number; courierPaidFrom?: CourierPaidFrom; note?: string }>(id, 'fulfilment');
 
 /** Adds or corrects the courier charge after an order has been dispatched. */
 export function useSetCourierCharge(id: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (courierChargePaise: number | null) => api<{ order: OrderDetail }>(`/admin/orders/${id}/courier-charge`, { method: 'PUT', body: { courierChargePaise } }).then((d) => d.order),
+    mutationFn: (input: { courierChargePaise: number | null; courierPaidFrom?: CourierPaidFrom | null }) => api<{ order: OrderDetail }>(`/admin/orders/${id}/courier-charge`, { method: 'PUT', body: input }).then((d) => d.order),
     onSuccess: (order) => {
       queryClient.setQueryData(['orders', 'detail', id], order);
       void queryClient.invalidateQueries({ queryKey: ['profit'] });
+      void queryClient.invalidateQueries({ queryKey: ['finance'] });
     },
   });
 }

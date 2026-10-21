@@ -15,7 +15,7 @@ import { formatDateTime } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 import { methodLabel, PAYMENT_STATUS_LABEL, REFUND_STATUS_LABEL, STOCK_ACTION_LABEL, useCreateRefund, useSyncRefund } from '@/features/payments/api';
 import { paiseToInput, parseRupees } from '@/lib/money';
-import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useCancelRefundedOrder, useOrder, useRecordOfflinePayment, useSetCourierCharge, useUpdateFulfilment, type OfflineMethod, type OrderDetail } from './api';
+import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useCancelRefundedOrder, useOrder, useRecordOfflinePayment, useSetCourierCharge, useUpdateFulfilment, type CourierPaidFrom, type OfflineMethod, type OrderDetail } from './api';
 import { InvoiceButton } from './invoice';
 import { WhatsAppActions } from './WhatsAppActions';
 import { FULFILMENT_LABEL, HISTORY_LABEL, OrderStateBadge, PAYMENT_LABEL } from './labels';
@@ -353,8 +353,11 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
   const [courier, setCourier] = useState('');
   const [tracking, setTracking] = useState('');
   const [charge, setCharge] = useState('');
+  const [paidFrom, setPaidFrom] = useState<CourierPaidFrom | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState(false);
+  const chargePaise = charge.trim() ? parseRupees(charge) : null;
+  const hasCharge = chargePaise != null && !Number.isNaN(chargePaise) && chargePaise > 0;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -362,8 +365,8 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
     const next: Record<string, string> = {};
     if (!courier.trim()) next.courier = 'Enter the courier';
     if (!tracking.trim()) next.tracking = 'Enter the tracking number';
-    const chargePaise = charge.trim() ? parseRupees(charge) : null;
     if (chargePaise != null && (Number.isNaN(chargePaise) || chargePaise < 0)) next.charge = 'Enter an amount';
+    if (hasCharge && !paidFrom) next.paidFrom = 'Choose where the courier was paid from';
     setErrors(next);
     if (Object.keys(next).length) return;
     setConfirming(true);
@@ -371,13 +374,15 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
 
   async function dispatch() {
     setConfirming(false);
-    const chargePaise = charge.trim() ? parseRupees(charge) : null;
     try {
-      await fulfil.mutateAsync({ status: 'dispatched', courier: courier.trim(), trackingNumber: tracking.trim(), ...(chargePaise != null ? { courierChargePaise: chargePaise } : {}) });
+      await fulfil.mutateAsync({ status: 'dispatched', courier: courier.trim(), trackingNumber: tracking.trim(), ...(chargePaise != null ? { courierChargePaise: chargePaise } : {}), ...(hasCharge && paidFrom ? { courierPaidFrom: paidFrom } : {}) });
       toast(`Order ${order.orderNumber} dispatched`);
       onClose();
     } catch (err) {
-      toast(messageOf(err), 'error');
+      // "Not enough cash" and "no bank set" belong next to the Paid from choice.
+      const paidFromError = fieldErrorsOf(err).courierPaidFrom ?? (/cash in hand is only/i.test(messageOf(err)) ? messageOf(err) : undefined);
+      if (paidFromError) setErrors((current) => ({ ...current, paidFrom: paidFromError }));
+      else toast(messageOf(err), 'error');
     }
   }
 
@@ -398,6 +403,7 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
         <FormField label="Courier charge (₹)" htmlFor="courier-charge" error={errors.charge} hint="What you paid to send this parcel. The customer doesn’t see it. You can add it later if you don’t know it yet.">
           <input id="courier-charge" inputMode="decimal" placeholder="Optional" className={`${controlClass} w-full`} value={charge} onChange={(e) => setCharge(e.target.value)} />
         </FormField>
+        {hasCharge && <PaidFromChoice bankName={order.courierBankName} value={paidFrom} onChange={setPaidFrom} error={errors.paidFrom} />}
         <div className="flex justify-end gap-2 border-t border-border pt-4">
           <Button variant="secondary" onClick={onClose}>
             Cancel
@@ -419,6 +425,11 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
               <p className="font-medium text-fg">
                 {courier.trim()} · tracking <span className="font-mono">{tracking.trim()}</span>
               </p>
+              {hasCharge && paidFrom && (
+                <p className="mt-1">
+                  Courier charge {formatPaise(chargePaise!)}, paid from {paidFrom === 'cash' ? 'Cash in hand' : order.courierBankName}.
+                </p>
+              )}
               <p className="mt-2">Check the tracking number: if we have the customer’s email address, these details are emailed straight away (unless that email is turned off), and dispatch can’t be undone.</p>
             </>
           }
@@ -428,42 +439,84 @@ function DispatchDialog({ order, open, onClose }: { order: OrderDetail; open: bo
   );
 }
 
+/** Required with a courier charge: the money leaves that account in Accounts. Bank is the account that receives offline payments. */
+function PaidFromChoice({ bankName, value, onChange, error }: { bankName: string | null; value: CourierPaidFrom | null; onChange: (next: CourierPaidFrom) => void; error?: string }) {
+  const options: { key: CourierPaidFrom; label: string; disabled: boolean }[] = [
+    { key: 'bank', label: bankName ? `Bank · ${bankName}` : 'Bank', disabled: !bankName },
+    { key: 'cash', label: 'Cash in hand', disabled: false },
+  ];
+  return (
+    <fieldset>
+      <legend className="mb-1.5 text-sm font-medium">Paid from</legend>
+      <div role="radiogroup" className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            role="radio"
+            aria-checked={value === option.key}
+            disabled={option.disabled}
+            onClick={() => onChange(option.key)}
+            className={clsx('rounded-lg border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50', value === option.key ? 'border-fg bg-surface-muted text-fg' : 'border-border text-fg-muted hover:text-fg')}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {!bankName && <p className="mt-1.5 text-xs text-fg-muted">No bank account is set to receive offline payments. Mark one in Accounts to pay from the bank.</p>}
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
+    </fieldset>
+  );
+}
+
 /** What the shop paid the courier, shown under the tracking details; staff who dispatch orders can add or change it. */
 function CourierCharge({ order }: { order: OrderDetail }) {
   const { can } = useSession();
   const save = useSetCourierCharge(order.id);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
+  const [paidFrom, setPaidFrom] = useState<CourierPaidFrom | null>(null);
   const [error, setError] = useState('');
+  const [paidFromError, setPaidFromError] = useState('');
   const canEdit = can('orders.update_fulfilment');
+  const paise = value.trim() ? parseRupees(value) : null;
+  const hasCharge = paise != null && !Number.isNaN(paise) && paise > 0;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     event.stopPropagation();
-    const paise = value.trim() ? parseRupees(value) : null;
+    setError('');
+    setPaidFromError('');
     if (paise != null && (Number.isNaN(paise) || paise < 0)) return setError('Enter an amount');
+    if (hasCharge && !paidFrom) return setPaidFromError('Choose where the courier was paid from');
     try {
-      await save.mutateAsync(paise);
+      await save.mutateAsync({ courierChargePaise: paise, courierPaidFrom: hasCharge ? paidFrom : null });
       toast(paise == null ? 'Courier charge removed' : 'Courier charge saved');
       setEditing(false);
     } catch (err) {
-      setError(messageOf(err));
+      const message = fieldErrorsOf(err).courierPaidFrom ?? (/cash in hand is only/i.test(messageOf(err)) ? messageOf(err) : undefined);
+      if (message) setPaidFromError(message);
+      else setError(messageOf(err));
     }
   }
 
   if (editing) {
     return (
-      <form onSubmit={submit} className="mt-2 flex flex-wrap items-start gap-2">
-        <div>
-          <input aria-label="Courier charge in rupees" inputMode="decimal" placeholder="Amount (₹)" className={`${controlClass} w-36`} value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
-          {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+      <form onSubmit={submit} className="mt-2 space-y-3">
+        <div className="flex flex-wrap items-start gap-2">
+          <div>
+            <input aria-label="Courier charge in rupees" inputMode="decimal" placeholder="Amount (₹)" className={`${controlClass} w-36`} value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+            {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+          </div>
+          <Button type="submit" size="sm" loading={save.isPending}>
+            Save
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
         </div>
-        <Button type="submit" size="sm" loading={save.isPending}>
-          Save
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>
-          Cancel
-        </Button>
+        {hasCharge && <PaidFromChoice bankName={order.courierBankName} value={paidFrom} onChange={setPaidFrom} error={paidFromError} />}
+        <p className="text-xs text-fg-muted">Leave it empty to remove the charge. Accounts is corrected to match.</p>
       </form>
     );
   }
@@ -471,6 +524,7 @@ function CourierCharge({ order }: { order: OrderDetail }) {
     <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-fg-muted">
       <span>
         Courier charge: <span className="font-medium text-fg tabular-nums">{order.courierChargePaise != null ? formatPaise(order.courierChargePaise) : 'not entered'}</span>
+        {order.courierPaidFrom && <span> · paid from {order.courierPaidFrom === 'cash' ? 'Cash in hand' : 'bank'}</span>}
       </span>
       {canEdit && (
         <button
@@ -478,7 +532,9 @@ function CourierCharge({ order }: { order: OrderDetail }) {
           className="text-xs font-semibold text-neutral-900 underline underline-offset-2"
           onClick={() => {
             setValue(order.courierChargePaise != null ? paiseToInput(order.courierChargePaise) : '');
+            setPaidFrom(order.courierPaidFrom);
             setError('');
+            setPaidFromError('');
             setEditing(true);
           }}
         >
