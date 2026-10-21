@@ -23,6 +23,14 @@ const signed = (paise: number) => (paise < 0 ? `−${formatPaise(-paise)}` : for
 const profitClass = (paise: number) => (paise < 0 ? 'text-rose-600' : paise > 0 ? 'text-emerald-700' : 'text-fg-muted');
 
 /** What was still to earn back at the end of a day, in words. Nothing is owed before anything was invested. */
+/** "3", or "3 · 1 waiting" when some are not paid yet. */
+function bottlesText(figures: Pick<ProfitAmounts, 'bottlesSold' | 'bottlesWaiting' | 'bottlesUk'>) {
+  const parts = [String(figures.bottlesSold)];
+  if (figures.bottlesWaiting > 0) parts.push(`${figures.bottlesWaiting} waiting`);
+  if (figures.bottlesUk > 0) parts.push(`${figures.bottlesUk} UK`);
+  return parts.join(' · ');
+}
+
 function earnBackText(day: Pick<ProfitDay, 'investedPaise' | 'remainingPaise'>) {
   if (day.investedPaise <= 0) return 'No investment yet';
   if (day.remainingPaise > 0) return formatPaise(day.remainingPaise);
@@ -224,6 +232,31 @@ function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title
               <dd className={clsx('font-bold tabular-nums', profitClass(amounts.profitPaise))}>{signed(amounts.profitPaise)}</dd>
             </div>
           </dl>
+          <dl className="mt-4 space-y-1.5 border-t border-gray-200 pt-3 text-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="font-semibold text-neutral-900">Bottles sold</dt>
+              <dd className="font-semibold text-neutral-900 tabular-nums">{amounts.bottlesSold}</dd>
+            </div>
+            {amounts.bottlesSold > 0 && (
+              <div className="flex items-baseline justify-between gap-3 pl-3 text-gray-600">
+                <dt>Paid</dt>
+                <dd className="tabular-nums">{amounts.bottlesSold - amounts.bottlesWaiting}</dd>
+              </div>
+            )}
+            {amounts.bottlesWaiting > 0 && (
+              <div className="flex items-baseline justify-between gap-3 pl-3 text-orange-700">
+                <dt>Waiting for payment</dt>
+                <dd className="tabular-nums">{amounts.bottlesWaiting} · {formatPaise(amounts.waitingPaise)} to collect</dd>
+              </div>
+            )}
+            {amounts.bottlesUk > 0 && (
+              <div className="flex items-baseline justify-between gap-3 text-gray-600">
+                <dt>UK bottles</dt>
+                <dd className="tabular-nums">{amounts.bottlesUk}</dd>
+              </div>
+            )}
+            {amounts.receivedEarlierPaise > 0 && <p className="text-xs text-gray-500">{formatPaise(amounts.receivedEarlierPaise)} received is for bills made on earlier days.</p>}
+          </dl>
           {bankNotes && amounts.notCreditedPaise > 0 && (
             <p className="mt-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
               <Landmark className="mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -282,6 +315,7 @@ function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: {
             <tr className="border-b border-border text-left text-xs text-fg-subtle">
               <th className="px-5 py-3 font-medium">Day</th>
               <th className="px-3 py-3 text-right font-medium">Sales</th>
+              <th className="px-3 py-3 text-right font-medium">Bottles</th>
               <th className="px-3 py-3 text-right font-medium">Costs</th>
               <th className="px-3 py-3 text-right font-medium">Profit</th>
               <th className="px-3 py-3 text-right font-medium">Still to earn back</th>
@@ -293,6 +327,7 @@ function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: {
               <tr key={day.date}>
                 <td className="px-5 py-3 whitespace-nowrap">{formatDay(day.date)}</td>
                 <td className="px-3 py-3 text-right tabular-nums">{formatPaise(day.salesPaise)}</td>
+                <td className="px-3 py-3 text-right tabular-nums">{bottlesText(day)}</td>
                 <td className="px-3 py-3 text-right text-gray-600 tabular-nums">{formatPaise(costsOf(day))}</td>
                 <td className={clsx('px-3 py-3 text-right font-semibold tabular-nums', profitClass(day.profitPaise))}>{signed(day.profitPaise)}</td>
                 <td className={clsx('px-3 py-3 text-right tabular-nums', day.investedPaise > 0 && day.remainingPaise <= 0 && 'text-emerald-700', day.investedPaise <= 0 && 'text-fg-muted')}>{earnBackText(day)}</td>
@@ -304,6 +339,7 @@ function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: {
             <tr className="border-t border-border bg-gray-50 font-semibold">
               <td className="px-5 py-3">Total for these {days.length} days</td>
               <td className="px-3 py-3 text-right tabular-nums">{formatPaise(totals.salesPaise)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{bottlesText(totals)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{formatPaise(costsOf(totals))}</td>
               <td className={clsx('px-3 py-3 text-right tabular-nums', profitClass(totals.profitPaise))}>{signed(totals.profitPaise)}</td>
               <td colSpan={2} />
@@ -330,6 +366,10 @@ function DayTable({ days, totals, busyDate, onDownload, onLoadMore, loading }: {
               <div>
                 <dt className="text-fg-subtle">Costs</dt>
                 <dd className="font-medium tabular-nums">{formatPaise(costsOf(day))}</dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-fg-subtle">Bottles sold</dt>
+                <dd className="font-medium tabular-nums">{bottlesText(day)}</dd>
               </div>
               <div className="col-span-2 flex items-end justify-between gap-3">
                 <div className="min-w-0">

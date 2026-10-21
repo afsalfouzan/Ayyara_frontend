@@ -19,6 +19,13 @@ export type ProfitAmounts = {
   notCreditedPaise: number;
   /** Razorpay payouts that reached the bank. */
   creditedPaise: number;
+  /** Bottles on bills made in the period (UK counted apart), those on bills not paid yet, and what those bills come to. */
+  bottlesSold: number;
+  bottlesWaiting: number;
+  waitingPaise: number;
+  bottlesUk: number;
+  /** Money received in the period for bills made on earlier days. */
+  receivedEarlierPaise: number;
 };
 export type ProfitDay = ProfitAmounts & { date: string; investedPaise: number; recoveredPaise: number; remainingPaise: number };
 export type Investment = { id: number; entryDate: string; amountPaise: number; description: string };
