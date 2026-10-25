@@ -3,6 +3,7 @@ import { DateRangePicker } from '@/components/ui/DatePicker';
 import { FILTER_PRESETS } from '@/features/reports/range';
 import { Plus, Store } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Button } from '@/components/ui/Button';
 import { SearchInput, Select } from '@/components/ui/controls';
 import { ErrorState, TableSkeleton } from '@/components/ui/DataState';
@@ -26,7 +27,14 @@ const TABS: { view: OrderView; label: string }[] = [
 
 export default function OfflineOrdersPage() {
   const { can } = useSession();
-  const [filters, setFilters] = useState<OrderFilters>({ channel: 'offline', region: 'all', view: 'all', page: 1, search: '', from: '', to: '' });
+  // Other pages can open this one on a tab, region and dates, e.g. the Profit page's "Still to collect" box.
+  const [params] = useSearchParams();
+  const [filters, setFilters] = useState<OrderFilters>(() => {
+    const view = TABS.find((tab) => tab.view === params.get('view'))?.view ?? 'all';
+    const region = params.get('region') === 'india' || params.get('region') === 'uk' ? (params.get('region') as SellingRegion) : 'all';
+    const day = (key: string) => (/^\d{4}-\d{2}-\d{2}$/.test(params.get(key) ?? '') ? params.get(key)! : '');
+    return { channel: 'offline', region, view, page: 1, search: '', from: day('from'), to: day('to') };
+  });
   const orders = useOrders({ ...filters, search: useDeferredValue(filters.search) });
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);

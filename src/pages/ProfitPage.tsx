@@ -1,7 +1,7 @@
 import { clsx } from 'clsx';
-import { CalendarDays, Download, Landmark, Mail, Pencil, PiggyBank, Plus, Target, Trash2, TrendingUp } from 'lucide-react';
+import { CalendarDays, ChevronRight, Download, Landmark, Mail, Pencil, PiggyBank, Plus, Target, Trash2, TrendingUp } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { Button } from '@/components/ui/Button';
 import { controlClass, FormField } from '@/components/ui/controls';
 import { ErrorState, TableSkeleton } from '@/components/ui/DataState';
@@ -121,9 +121,9 @@ export default function ProfitPage() {
           <Position data={data} onChangeStart={() => setStartOpen(true)} />
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <Breakdown title="Today" subtitle={formatDay(data.today)} amounts={data.todayFigures} resultLabel={['Profit today', 'Loss today']} bankNotes />
-            <Breakdown title="This month" subtitle={`${formatDay(data.startDate > `${data.today.slice(0, 7)}-01` ? data.startDate : `${data.today.slice(0, 7)}-01`)} until today`} amounts={data.monthTotals} resultLabel={['Profit this month', 'Loss this month']} />
-            <Breakdown title="Total profit" subtitle={`${formatDay(data.startDate)} until today`} amounts={data.allTotals} resultLabel={['Total profit earned', 'Total loss']} />
+            <Breakdown title="Today" subtitle={formatDay(data.today)} amounts={data.todayFigures} resultLabel={['Profit today', 'Loss today']} period={{ from: data.today, to: data.today }} bankNotes />
+            <Breakdown title="This month" subtitle={`${formatDay(data.startDate > `${data.today.slice(0, 7)}-01` ? data.startDate : `${data.today.slice(0, 7)}-01`)} until today`} amounts={data.monthTotals} resultLabel={['Profit this month', 'Loss this month']} period={{ from: data.startDate > `${data.today.slice(0, 7)}-01` ? data.startDate : `${data.today.slice(0, 7)}-01`, to: data.today }} />
+            <Breakdown title="Total profit" subtitle={`${formatDay(data.startDate)} until today`} amounts={data.allTotals} resultLabel={['Total profit earned', 'Total loss']} period={{ from: data.startDate, to: data.today }} />
             <div className="lg:self-start">
               <Investments entries={data.investments} total={data.position.investedPaise} onAdd={() => setInvestmentDialog({ open: true, entry: null })} onEdit={(entry) => setInvestmentDialog({ open: true, entry })} />
             </div>
@@ -231,7 +231,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
  * then how India and the UK each did, and the bottles behind it.
  * The UK figures are part of the totals, never added on top.
  */
-function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title: string; subtitle: string; amounts: ProfitAmounts | null; resultLabel: [string, string]; bankNotes?: boolean }) {
+function Breakdown({ title, subtitle, amounts, resultLabel, period, bankNotes }: { title: string; subtitle: string; amounts: ProfitAmounts | null; resultLabel: [string, string]; period: { from: string; to: string }; bankNotes?: boolean }) {
   if (!amounts) {
     return (
       <Panel>
@@ -323,11 +323,19 @@ function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title
             {hasUk && <Row label="Sold in the UK" value={String(a.bottlesUk)} hint={a.ukBottlesWaiting > 0 ? `${a.bottlesUk - a.ukBottlesWaiting} paid · ${a.ukBottlesWaiting} not paid yet` : undefined} />}
           </dl>
           {(a.waitingPaise > 0 || a.ukWaitingPaise > 0) && (
-            <div className="space-y-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-              <p className="font-semibold">Still to collect (not counted in profit until paid)</p>
+            // Opens Offline Orders on "Not paid", for the same days, and for one region when only one has bills waiting.
+            <Link
+              to={`/offline-orders?${new URLSearchParams({ view: 'unpaid', from: period.from, to: period.to, ...(a.waitingPaise > 0 && a.ukWaitingPaise > 0 ? {} : { region: a.ukWaitingPaise > 0 ? 'uk' : 'india' }) })}`}
+              className="group block space-y-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800 transition-colors hover:border-orange-300 hover:bg-orange-100"
+            >
+              <p className="flex items-center justify-between gap-2 font-semibold">
+                Still to collect (not counted in profit until paid)
+                <ChevronRight className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </p>
               {a.waitingPaise > 0 && <p>{hasUk ? 'India: ' : ''}{formatPaise(a.waitingPaise)} for {plural(a.bottlesWaiting, 'bottle')}</p>}
               {a.ukWaitingPaise > 0 && <p>UK: {formatPaise(a.ukWaitingPaise)} for {plural(a.ukBottlesWaiting, 'bottle')}</p>}
-            </div>
+              <p className="font-semibold underline underline-offset-2">See the unpaid bills</p>
+            </Link>
           )}
           {a.receivedEarlierPaise > 0 && <p className="text-xs text-gray-500">{formatPaise(a.receivedEarlierPaise)} of the money in is for bills made on earlier days.</p>}
         </section>
