@@ -25,6 +25,13 @@ export type ProfitAmounts = {
   bottlesWaiting: number;
   waitingPaise: number;
   bottlesUk: number;
+  /** UK sales on their own (already inside the totals). */
+  ukSalesPaise: number;
+  ukRefundsPaise: number;
+  ukCostPaise: number;
+  ukProfitPaise: number;
+  ukBottlesWaiting: number;
+  ukWaitingPaise: number;
   bottlesPromotion: number;
   /** Money received in the period for bills made on earlier days. */
   receivedEarlierPaise: number;

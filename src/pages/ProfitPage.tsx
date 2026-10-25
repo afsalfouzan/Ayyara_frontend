@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { StatTile } from '@/components/ui/StatTile';
 import { toast } from '@/components/ui/Toast';
-import { COST_LINES, costsOf, downloadReport, useDeleteInvestment, useProfit, useSaveInvestment, useSendReport, useSetStartDate, type Investment, type ProfitAmounts, type ProfitDay, type ProfitOverview } from '@/features/profit/api';
+import { costsOf, downloadReport, useDeleteInvestment, useProfit, useSaveInvestment, useSendReport, useSetStartDate, type Investment, type ProfitAmounts, type ProfitDay, type ProfitOverview } from '@/features/profit/api';
 import { FILTER_PRESETS, presetRange } from '@/features/reports/range';
 import { formatDay, istToday } from '@/lib/dates';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
@@ -207,78 +207,144 @@ function Position({ data, onChangeStart }: { data: ProfitOverview; onChangeStart
   );
 }
 
+/** One line of the card: a label on the left, an amount on the right. */
+function Row({ label, value, hint, className }: { label: string; value: string; hint?: string; className?: string }) {
+  return (
+    <div className={clsx('flex items-baseline justify-between gap-3', className)}>
+      <dt>
+        {label}
+        {hint && <span className="block text-xs font-normal text-gray-500">{hint}</span>}
+      </dt>
+      <dd className="shrink-0 tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return <p className="text-xs font-semibold tracking-wide text-gray-500 uppercase">{children}</p>;
+}
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+/**
+ * A profit card, written for the owner: money in, money out, what is left;
+ * then how India and the UK each did, and the bottles behind it.
+ * The UK figures are part of the totals, never added on top.
+ */
 function Breakdown({ title, subtitle, amounts, resultLabel, bankNotes }: { title: string; subtitle: string; amounts: ProfitAmounts | null; resultLabel: [string, string]; bankNotes?: boolean }) {
+  if (!amounts) {
+    return (
+      <Panel>
+        <PanelHeader icon={TrendingUp} iconClass="text-emerald-600" title={title} description={subtitle} />
+        <p className="px-5 py-8 text-center text-sm text-gray-400">Nothing counted for today yet.</p>
+      </Panel>
+    );
+  }
+  const a = amounts;
+  const hasUk = Boolean(a.ukSalesPaise || a.ukRefundsPaise || a.ukCostPaise || a.bottlesUk || a.ukWaitingPaise);
+  const indiaSales = a.salesPaise - a.ukSalesPaise;
+  const indiaShop = a.offlineSalesPaise - a.ukSalesPaise;
+  const indiaCost = a.goodsCostPaise - a.ukCostPaise;
+  const indiaRefunds = a.refundsPaise - a.ukRefundsPaise;
+  // What each region earned from its own sales, and the running costs of the business, which belong to neither.
+  const indiaProfit = indiaSales - indiaRefunds - a.feesPaise - indiaCost - a.courierPaise - a.promotionCostPaise;
+  const sharedCosts = a.salariesPaise + a.fixedCostsPaise + a.expensesPaise + a.stockLossPaise;
+  const moneyOut = a.salesPaise - a.profitPaise;
+
+  // Money going out, leaving out lines that are zero so the card stays short.
+  const outLines: [string, number, string?][] = [
+    [hasUk ? 'Perfumes sold in India (their cost)' : 'Perfumes sold (their cost)', indiaCost],
+    ['Perfumes sold in the UK (their cost)', a.ukCostPaise],
+    ['Money refunded to customers', a.refundsPaise],
+    ['Razorpay fees', a.feesPaise],
+    ['Courier charges', a.courierPaise],
+    ['Salaries', a.salariesPaise, 'Each month’s salary shared over its days, plus bonuses'],
+    ['Rent, electricity and maintenance', a.fixedCostsPaise, 'Shared over the days of the month'],
+    ['Other expenses', a.expensesPaise],
+    ['Bottles given free for promotion', a.promotionCostPaise],
+    ['Stock written off', a.stockLossPaise],
+  ];
+  const profitLabel = a.profitPaise < 0 ? resultLabel[1] : resultLabel[0];
+
   return (
     <Panel>
       <PanelHeader icon={TrendingUp} iconClass="text-emerald-600" title={title} description={subtitle} />
-      {!amounts ? (
-        <p className="px-5 py-8 text-center text-sm text-gray-400">Nothing counted for today yet.</p>
-      ) : (
-        <div className="px-5 py-4">
-          <dl className="space-y-2 text-sm">
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="font-semibold text-neutral-900">Sales received</dt>
-              <dd className="font-semibold text-neutral-900 tabular-nums">{formatPaise(amounts.salesPaise)}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-3 pl-3 text-xs text-gray-500">
-              <dt>Website {formatPaise(amounts.onlineSalesPaise)} · Offline {formatPaise(amounts.offlineSalesPaise)}</dt>
-            </div>
-            {COST_LINES.filter(({ key }) => (key !== 'stockLossPaise' || amounts.stockLossPaise !== 0) && (key !== 'promotionCostPaise' || amounts.promotionCostPaise !== 0)).map(({ key, label }) => (
-              <div key={key} className="flex items-baseline justify-between gap-3 text-gray-600">
-                <dt>Less: {label}</dt>
-                <dd className="tabular-nums">{signed(-amounts[key])}</dd>
-              </div>
-            ))}
-            <div className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-3 text-base">
-              <dt className="font-bold text-neutral-900">{amounts.profitPaise < 0 ? resultLabel[1] : resultLabel[0]}</dt>
-              <dd className={clsx('font-bold tabular-nums', profitClass(amounts.profitPaise))}>{signed(amounts.profitPaise)}</dd>
-            </div>
+      <div className="space-y-5 px-5 py-4 text-sm">
+        <section className="space-y-2">
+          <SectionTitle>Money in</SectionTitle>
+          <dl className="space-y-2 text-gray-700">
+            <Row label={hasUk ? 'India sales' : 'Sales'} value={formatPaise(indiaSales)} hint={`Website ${formatPaise(a.onlineSalesPaise)} · Shop ${formatPaise(indiaShop)}`} />
+            {hasUk && <Row label="UK sales" value={formatPaise(a.ukSalesPaise)} />}
+            <Row label="Total money in" value={formatPaise(a.salesPaise)} className="border-t border-gray-100 pt-2 font-semibold text-neutral-900" />
           </dl>
-          <dl className="mt-4 space-y-1.5 border-t border-gray-200 pt-3 text-sm">
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="font-semibold text-neutral-900">Bottles sold</dt>
-              <dd className="font-semibold text-neutral-900 tabular-nums">{amounts.bottlesSold}</dd>
-            </div>
-            {amounts.bottlesSold > 0 && (
-              <div className="flex items-baseline justify-between gap-3 pl-3 text-gray-600">
-                <dt>Paid</dt>
-                <dd className="tabular-nums">{amounts.bottlesSold - amounts.bottlesWaiting}</dd>
-              </div>
-            )}
-            {amounts.bottlesWaiting > 0 && (
-              <div className="flex items-baseline justify-between gap-3 pl-3 text-orange-700">
-                <dt>Waiting for payment</dt>
-                <dd className="tabular-nums">{amounts.bottlesWaiting} · {formatPaise(amounts.waitingPaise)} to collect</dd>
-              </div>
-            )}
-            {amounts.bottlesPromotion > 0 && (
-              <div className="flex items-baseline justify-between gap-3 text-gray-600">
-                <dt>Given for promotion</dt>
-                <dd className="tabular-nums">{amounts.bottlesPromotion}</dd>
-              </div>
-            )}
-            {amounts.bottlesUk > 0 && (
-              <div className="flex items-baseline justify-between gap-3 text-gray-600">
-                <dt>UK bottles</dt>
-                <dd className="tabular-nums">{amounts.bottlesUk}</dd>
-              </div>
-            )}
-            {amounts.receivedEarlierPaise > 0 && <p className="text-xs text-gray-500">{formatPaise(amounts.receivedEarlierPaise)} received is for bills made on earlier days.</p>}
+        </section>
+
+        <section className="space-y-2">
+          <SectionTitle>Money out</SectionTitle>
+          <dl className="space-y-2 text-gray-700">
+            {outLines
+              .filter(([, value]) => value !== 0)
+              .map(([label, value, hint]) => (
+                <Row key={label} label={label} value={signed(-value)} hint={hint} />
+              ))}
+            <Row label="Total money out" value={signed(-moneyOut)} className="border-t border-gray-100 pt-2 font-semibold text-neutral-900" />
           </dl>
-          {bankNotes && amounts.notCreditedPaise > 0 && (
-            <p className="mt-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-              <Landmark className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              {formatPaise(amounts.notCreditedPaise)} of today’s website sales (after Razorpay fees) is not yet credited to your bank. Razorpay pays it out in about two working days.
-            </p>
-          )}
-          {bankNotes && amounts.creditedPaise > 0 && (
-            <p className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              <Landmark className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              {formatPaise(amounts.creditedPaise)} was credited to your bank by Razorpay today.
-            </p>
-          )}
+        </section>
+
+        <div className={clsx('flex items-baseline justify-between gap-3 rounded-lg px-4 py-3', a.profitPaise < 0 ? 'bg-rose-50' : 'bg-emerald-50')}>
+          <div>
+            <p className="text-base font-bold text-neutral-900">{profitLabel}</p>
+            <p className="text-xs text-gray-600">Money in − money out{hasUk ? ', India and UK together' : ''}</p>
+          </div>
+          <p className={clsx('text-xl font-bold tabular-nums', profitClass(a.profitPaise))}>{signed(a.profitPaise)}</p>
         </div>
-      )}
+
+        {hasUk && (
+          <section className="space-y-2">
+            <SectionTitle>Where the profit came from</SectionTitle>
+            <dl className="space-y-2 text-gray-700">
+              <Row label="India" value={signed(indiaProfit)} hint="India sales minus their perfume cost, refunds, fees, courier and promotion" />
+              <Row label="UK" value={signed(a.ukSalesPaise - a.ukRefundsPaise - a.ukCostPaise)} hint="UK sales minus their perfume cost" />
+              <Row label="Running costs" value={signed(-sharedCosts)} hint="Salaries, rent and other expenses, for the whole business" />
+              <Row label={profitLabel} value={signed(a.profitPaise)} className={clsx('border-t border-gray-100 pt-2 font-semibold', profitClass(a.profitPaise))} />
+            </dl>
+          </section>
+        )}
+
+        <section className="space-y-2">
+          <SectionTitle>Bottles</SectionTitle>
+          <dl className="space-y-2 text-gray-700">
+            <Row
+              label={hasUk ? 'Sold in India' : 'Sold'}
+              value={String(a.bottlesSold)}
+              hint={a.bottlesSold > 0 ? `${a.bottlesSold - a.bottlesWaiting} paid${a.bottlesWaiting > 0 ? ` · ${a.bottlesWaiting} not paid yet` : ''}` : undefined}
+            />
+            {a.bottlesPromotion > 0 && <Row label="Given free for promotion" value={String(a.bottlesPromotion)} />}
+            {hasUk && <Row label="Sold in the UK" value={String(a.bottlesUk)} hint={a.ukBottlesWaiting > 0 ? `${a.bottlesUk - a.ukBottlesWaiting} paid · ${a.ukBottlesWaiting} not paid yet` : undefined} />}
+          </dl>
+          {(a.waitingPaise > 0 || a.ukWaitingPaise > 0) && (
+            <div className="space-y-1 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+              <p className="font-semibold">Still to collect (not counted in profit until paid)</p>
+              {a.waitingPaise > 0 && <p>{hasUk ? 'India: ' : ''}{formatPaise(a.waitingPaise)} for {plural(a.bottlesWaiting, 'bottle')}</p>}
+              {a.ukWaitingPaise > 0 && <p>UK: {formatPaise(a.ukWaitingPaise)} for {plural(a.ukBottlesWaiting, 'bottle')}</p>}
+            </div>
+          )}
+          {a.receivedEarlierPaise > 0 && <p className="text-xs text-gray-500">{formatPaise(a.receivedEarlierPaise)} of the money in is for bills made on earlier days.</p>}
+        </section>
+
+        {bankNotes && a.notCreditedPaise > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+            <Landmark className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            {formatPaise(a.notCreditedPaise)} of today’s website sales (after Razorpay fees) is not yet credited to your bank. Razorpay pays it out in about two working days.
+          </p>
+        )}
+        {bankNotes && a.creditedPaise > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <Landmark className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            {formatPaise(a.creditedPaise)} was credited to your bank by Razorpay today.
+          </p>
+        )}
+      </div>
     </Panel>
   );
 }

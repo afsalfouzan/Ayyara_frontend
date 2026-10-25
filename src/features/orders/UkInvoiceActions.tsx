@@ -28,13 +28,14 @@ export function UkInvoiceActions({ order }: { order: OrderDetail }) {
 
   return (
     <section className="rounded-xl border border-gray-200 p-4">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Mail className="size-4 text-fg-muted" aria-hidden />
+      {/* On narrow screens the button drops below the heading instead of squeezing both onto two lines. */}
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <h3 className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap">
+          <Mail className="size-4 shrink-0 text-fg-muted" aria-hidden />
           Send the invoice
         </h3>
         {canAct && uk.canEditContact && (
-          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+          <Button variant="ghost" size="sm" className="-ml-2 shrink-0 whitespace-nowrap sm:ml-0" onClick={() => setEditing(true)}>
             <Pencil className="size-3.5" aria-hidden />
             {nothingToSendTo ? 'Add WhatsApp / email' : 'Edit contact'}
           </Button>
