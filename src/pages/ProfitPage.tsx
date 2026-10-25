@@ -123,9 +123,11 @@ export default function ProfitPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Breakdown title="Today" subtitle={formatDay(data.today)} amounts={data.todayFigures} resultLabel={['Profit today', 'Loss today']} bankNotes />
             <Breakdown title="This month" subtitle={`${formatDay(data.startDate > `${data.today.slice(0, 7)}-01` ? data.startDate : `${data.today.slice(0, 7)}-01`)} until today`} amounts={data.monthTotals} resultLabel={['Profit this month', 'Loss this month']} />
+            <Breakdown title="Total profit" subtitle={`${formatDay(data.startDate)} until today`} amounts={data.allTotals} resultLabel={['Total profit earned', 'Total loss']} />
+            <div className="lg:self-start">
+              <Investments entries={data.investments} total={data.position.investedPaise} onAdd={() => setInvestmentDialog({ open: true, entry: null })} onEdit={(entry) => setInvestmentDialog({ open: true, entry })} />
+            </div>
           </div>
-
-          <Investments entries={data.investments} total={data.position.investedPaise} onAdd={() => setInvestmentDialog({ open: true, entry: null })} onEdit={(entry) => setInvestmentDialog({ open: true, entry })} />
 
           <Panel>
             <PanelHeader

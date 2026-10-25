@@ -12,6 +12,8 @@ import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput, parseRupees } from '@/lib/money';
 import { INDIAN_STATES } from '@/lib/states';
 import { InvoiceButton } from './invoice';
+import { emptyWhatsAppNumber, joinWhatsAppNumber, whatsAppNumberError } from './whatsappNumber';
+import { WhatsAppNumberInput } from './WhatsAppNumberInput';
 import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, REGION_LABEL, useCreateOfflineOrder, useCreateUkItem, useUkItems, type OfflineMethod, type OrderDetail, type SellingRegion, type UkItem } from './api';
 
 /** `cost`: UK only, what each bottle actually cost (India's cost comes from the purchases in Stock). */
@@ -51,6 +53,8 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
   const [newItemOpen, setNewItemOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>(() => [emptyRow()]);
   const [customer, setCustomer] = useState({ name: '', phone: '', email: '' });
+  // UK sales: the WhatsApp number with its country code, picked separately.
+  const [ukPhone, setUkPhone] = useState(emptyWhatsAppNumber);
   const [delivery, setDelivery] = useState(false);
   const [address, setAddress] = useState({ addressLine1: '', addressLine2: '', city: '', state: '', pincode: '' });
   const [paid, setPaid] = useState(true);
@@ -109,7 +113,8 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
     if (new Set(rows.map((r) => r.variantId).filter(Boolean)).size !== rows.filter((r) => r.variantId).length) next.items = 'Each perfume and size can appear only once — combine the quantities';
     if (customer.name.trim().length < 2) next.name = 'Enter the customer’s name';
     if (uk) {
-      if (customer.phone.trim() && !/^\+?\d{7,15}$/.test(customer.phone.replace(/[\s().-]/g, ''))) next.phone = 'Enter a valid phone number, or leave it empty';
+      const phoneError = whatsAppNumberError(ukPhone);
+      if (phoneError) next.phone = phoneError;
     } else if (!/^[6-9]\d{9}$/.test(customer.phone.replace(/[\s-]/g, '').replace(/^(\+91|0)/, ''))) next.phone = 'Enter a 10-digit mobile number';
     if (customer.email && !/^\S+@\S+\.\S+$/.test(customer.email)) next.email = 'Enter a valid email';
     if (delivery && !uk) {
@@ -131,7 +136,10 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
         region,
         saleDate,
         items: rows.map((row) => ({ variantId: Number(row.variantId), quantity: Number(row.quantity), unitPricePaise: parseRupees(row.price)!, ...(uk ? { unitCostPaise: parseRupees(row.cost)! } : {}) })),
-        customer: { name: customer.name.trim(), ...(customer.phone.trim() ? { phone: customer.phone.trim() } : {}), ...(customer.email.trim() ? { email: customer.email.trim() } : {}) },
+        customer: (() => {
+          const phone = uk ? joinWhatsAppNumber(ukPhone) : customer.phone.trim();
+          return { name: customer.name.trim(), ...(phone ? { phone } : {}), ...(customer.email.trim() ? { email: customer.email.trim() } : {}) };
+        })(),
         delivery: delivery && !uk ? { required: true, ...address } : { required: false },
         payment: paid ? { status: 'paid', method, reference: reference.trim() } : { status: 'unpaid' },
         note: note.trim(),
@@ -179,7 +187,11 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
             Done
           </Button>
         </div>
-        <p className="mt-4 text-[11px] text-gray-500">{saved.hasInvoice ? 'You can download the invoice again any time from the Offline Orders list.' : 'UK sales have no invoice, and godown stock was not changed.'}</p>
+        <p className="mt-4 text-[11px] text-gray-500">
+          {saved.sellingRegion === 'uk'
+            ? 'Nothing was sent to the customer and godown stock was not changed. Open the order to send the invoice on WhatsApp or by email.'
+            : 'You can download the invoice again any time from the Offline Orders list.'}
+        </p>
       </div>
     );
   }
@@ -324,14 +336,20 @@ function OfflineOrderForm({ onDone, onCreated }: { onDone: () => void; onCreated
       </Section>
 
       <Section title="Customer">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className={clsx('grid gap-4', uk ? 'sm:grid-cols-2' : 'sm:grid-cols-3')}>
           <FormField label="Name" htmlFor="oc-name" error={errors.name}>
             <input id="oc-name" className={`${controlClass} w-full`} value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
           </FormField>
-          <FormField label={uk ? 'Phone (optional)' : 'Mobile number'} htmlFor="oc-phone" error={errors.phone}>
-            <input id="oc-phone" inputMode="tel" className={`${controlClass} w-full`} value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
-          </FormField>
-          <FormField label="Email (optional)" htmlFor="oc-email" error={errors.email} hint={uk ? 'Kept on the order. No email is sent for UK sales.' : undefined}>
+          {uk ? (
+            <FormField label="WhatsApp number (optional)" htmlFor="oc-phone" error={errors.phone}>
+              <WhatsAppNumberInput id="oc-phone" value={ukPhone} onChange={setUkPhone} />
+            </FormField>
+          ) : (
+            <FormField label="Mobile number" htmlFor="oc-phone" error={errors.phone}>
+              <input id="oc-phone" inputMode="tel" className={`${controlClass} w-full`} value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+            </FormField>
+          )}
+          <FormField label="Email (optional)" htmlFor="oc-email" error={errors.email} hint={uk ? 'Nothing is sent now. Send the invoice from the order when you’re ready.' : undefined}>
             <input id="oc-email" type="email" className={`${controlClass} w-full`} value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} />
           </FormField>
         </div>

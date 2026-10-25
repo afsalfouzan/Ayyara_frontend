@@ -41,6 +41,7 @@ export type ProfitOverview = {
   position: { investedPaise: number; recoveredPaise: number; remainingPaise: number };
   todayFigures: ProfitDay | null;
   monthTotals: ProfitAmounts;
+  allTotals: ProfitAmounts;
   rangeTotals: ProfitAmounts;
   /** Newest day first. */
   days: ProfitDay[];
@@ -60,11 +61,11 @@ export const COST_LINES: { key: keyof ProfitAmounts; label: string }[] = [
 ];
 export const costsOf = (amounts: ProfitAmounts) => amounts.salesPaise - amounts.profitPaise;
 
-export function useProfit(range: { from: string; to: string }) {
+export function useProfit(range: { from: string; to: string }, enabled = true) {
   const params = new URLSearchParams();
   if (range.from) params.set('from', range.from);
   if (range.to) params.set('to', range.to);
-  return useQuery({ queryKey: ['profit', range], queryFn: () => api<ProfitOverview>(`/admin/profit?${params}`), placeholderData: keepPreviousData });
+  return useQuery({ queryKey: ['profit', range], queryFn: () => api<ProfitOverview>(`/admin/profit?${params}`), placeholderData: keepPreviousData, enabled });
 }
 
 function useProfitMutation<TInput>(run: (input: TInput) => Promise<unknown>) {

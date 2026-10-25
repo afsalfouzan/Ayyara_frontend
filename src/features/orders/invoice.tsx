@@ -6,8 +6,8 @@ import type { OrderSummary } from './api';
 
 const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api/v1').replace(/\/$/, '');
 
-/** An invoice exists once an order has gone through; unpaid website orders, expired and cancelled ones have none, and neither do UK sales. */
-export const hasInvoice = (order: Pick<OrderSummary, 'status' | 'sellingRegion'>) => order.status === 'confirmed' && order.sellingRegion !== 'uk';
+/** An invoice exists once an order has gone through (UK sales too); unpaid website orders, expired and cancelled ones have none. */
+export const hasInvoice = (order: Pick<OrderSummary, 'status'>) => order.status === 'confirmed';
 
 /** Fetches the invoice PDF for an order and saves it to the device. */
 export async function downloadInvoice(order: Pick<OrderSummary, 'id' | 'orderNumber'>) {

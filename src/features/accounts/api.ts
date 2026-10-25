@@ -166,6 +166,8 @@ export type Employee = {
   role: string;
   phone: string | null;
   monthlySalaryPaise: number;
+  /** The day they started work; profit counts their salary from here. */
+  startedOn: string;
   isActive: boolean;
   advanceOutstandingPaise: number;
   month: { salary: { id: number; grossPaise: number; advanceDeductedPaise: number; paidPaise: number; paidOn: string } | null; advancePaise: number; bonusPaise: number };
@@ -209,7 +211,7 @@ export function useSalaryPayments(month: string) {
   return useQuery({ queryKey: ['finance', 'salary-payments', month], queryFn: () => api<{ items: SalaryPayment[] }>(`/admin/finance/salary-payments?month=${month}`), placeholderData: keepPreviousData });
 }
 
-export type EmployeeInput = { name: string; role: string; phone: string; monthlySalaryPaise: number };
+export type EmployeeInput = { name: string; role: string; phone: string; monthlySalaryPaise: number; startedOn: string };
 export const useCreateEmployee = () => useFinanceMutation((body: EmployeeInput) => api<{ id: number }>('/admin/finance/employees', { method: 'POST', body }));
 export const useUpdateEmployee = () => useFinanceMutation(({ id, ...body }: { id: number } & Partial<EmployeeInput> & { isActive?: boolean }) => api(`/admin/finance/employees/${id}`, { method: 'PATCH', body }));
 

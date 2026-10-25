@@ -147,7 +147,9 @@ export default function SalariesPage() {
                   <tr key={employee.id}>
                     <td className="px-5 py-3">
                       <p className="font-bold text-neutral-900">{employee.name}</p>
-                      {employee.role && <p className="text-[11px] text-gray-500">{employee.role}</p>}
+                      <p className="text-[11px] text-gray-500">
+                        {employee.role ? `${employee.role} · ` : ''}Joined {formatDay(employee.startedOn)}
+                      </p>
                     </td>
                     <td className="px-3 py-3 text-right font-mono font-bold tabular-nums">{formatPaise(employee.monthlySalaryPaise)}</td>
                     <td className={clsx('px-3 py-3 text-right font-mono font-bold tabular-nums', employee.advanceOutstandingPaise > 0 ? 'text-rose-600' : 'text-gray-400')}>{employee.advanceOutstandingPaise > 0 ? formatPaise(employee.advanceOutstandingPaise) : '—'}</td>
@@ -175,7 +177,7 @@ export default function SalariesPage() {
                       <p className="font-bold text-neutral-900">{employee.name}</p>
                       <p className="text-[11px] text-gray-500">
                         {employee.role ? `${employee.role} · ` : ''}
-                        <span className="font-mono">{formatPaise(employee.monthlySalaryPaise)}</span> a month
+                        <span className="font-mono">{formatPaise(employee.monthlySalaryPaise)}</span> a month · Joined {formatDay(employee.startedOn)}
                       </p>
                     </div>
                     <MonthStatus employee={employee} />

@@ -17,6 +17,7 @@ import { methodLabel, PAYMENT_STATUS_LABEL, REFUND_STATUS_LABEL, STOCK_ACTION_LA
 import { paiseToInput, parseRupees } from '@/lib/money';
 import { OFFLINE_METHOD_LABEL, OFFLINE_METHODS, useCancelOfflineOrder, useCancelOrder, useCancelRefundedOrder, useOrder, useRecordOfflinePayment, useSetCourierCharge, useUpdateFulfilment, type CourierPaidFrom, type OfflineMethod, type OrderDetail } from './api';
 import { InvoiceButton } from './invoice';
+import { UkInvoiceActions } from './UkInvoiceActions';
 import { WhatsAppActions } from './WhatsAppActions';
 import { FULFILMENT_LABEL, HISTORY_LABEL, OrderStateBadge, PAYMENT_LABEL } from './labels';
 
@@ -73,9 +74,10 @@ function OrderBody({ order }: { order: OrderDetail }) {
         <InvoiceButton order={order} label="Download invoice" className="ml-auto" />
       </div>
 
-      <WhatsAppActions order={order} />
+      {uk && <p className="rounded-lg bg-info-bg px-3 py-2.5 text-xs text-info">Sold in the UK. Godown stock was not changed, and nothing is sent to the customer by itself: send the invoice below when you’re ready.</p>}
 
-      {uk && <p className="rounded-lg bg-info-bg px-3 py-2.5 text-xs text-info">Sold in the UK. This records the money only: godown stock was not changed, and no invoice or email goes to the customer.</p>}
+      <WhatsAppActions order={order} />
+      <UkInvoiceActions order={order} />
 
       {order.status === 'pending_payment' && order.reservationExpiresAt && (
         <p className="rounded-lg bg-warning-bg px-3 py-2.5 text-sm text-warning">

@@ -48,4 +48,6 @@ export const HISTORY_LABEL: Record<string, string> = {
   refund_requested: 'Refund requested',
   whatsapp_invoice: 'Invoice prepared for WhatsApp',
   whatsapp_dispatch: 'Dispatch update prepared for WhatsApp',
+  email_invoice: 'Invoice sent by email',
+  contact_updated: 'Contact details updated',
 };

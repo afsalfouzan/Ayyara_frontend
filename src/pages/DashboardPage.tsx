@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { BarChart3, Boxes, IndianRupee, Layers, PackageCheck, PieChart as PieIcon, ReceiptText, RefreshCw, ShoppingBag, Sparkles, Store, TrendingUp, Trophy, Wallet } from 'lucide-react';
+import { BarChart3, Boxes, Clock, IndianRupee, Layers, PackageCheck, PieChart as PieIcon, ReceiptText, RefreshCw, ShoppingBag, Sparkles, Store, TrendingUp, Trophy, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { ErrorState } from '@/components/ui/DataState';
@@ -8,11 +8,13 @@ import { ModuleCard, Panel, SectionCard } from '@/components/ui/Panel';
 import { KpiCard } from '@/components/ui/StatTile';
 import { BalanceStrip } from '@/features/accounts/BalanceStrip';
 import { useSession } from '@/features/auth/session';
+import { useProfit } from '@/features/profit/api';
 import { OrderStateBadge } from '@/features/orders/labels';
 import { useDashboard, type Attention, type Report } from '@/features/reports/api';
 import { ChannelPie, LowStockCard, PerfumeBarChart, SalesTrendChart } from '@/features/reports/charts';
 import { defaultGroupBy, presetRange, type PresetKey, type Range } from '@/features/reports/range';
 import { RangePicker } from '@/features/reports/RangePicker';
+import { formatDay, istToday } from '@/lib/dates';
 import { formatRelative } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 
@@ -92,13 +94,13 @@ export default function DashboardPage() {
           <ErrorState error={query.error} onRetry={() => void query.refetch()} />
         </Panel>
       ) : !query.data ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
             <div key={i} className="h-32 animate-pulse rounded-2xl bg-gray-200/60" />
           ))}
         </div>
       ) : (
-        <DashboardBody report={query.data.report} attention={query.data.attention} canSeeOrders={can('orders.view')} canSeeStock={can('inventory.view')} />
+        <DashboardBody report={query.data.report} attention={query.data.attention} canSeeOrders={can('orders.view')} canSeeStock={can('inventory.view')} isOwner={Boolean(user?.isOwner)} />
       )}
     </div>
   );
@@ -106,7 +108,10 @@ export default function DashboardPage() {
 
 /* ---------- Page body ---------- */
 
-function DashboardBody({ report, attention, canSeeOrders, canSeeStock }: { report: Report; attention: Attention; canSeeOrders: boolean; canSeeStock: boolean }) {
+function DashboardBody({ report, attention, canSeeOrders, canSeeStock, isOwner }: { report: Report; attention: Attention; canSeeOrders: boolean; canSeeStock: boolean; isOwner: boolean }) {
+  // Profit after every cost is for the owner only; the server refuses anyone else.
+  const today = istToday();
+  const profit = useProfit({ from: today, to: today }, isOwner);
   const t = report.totals;
   const f = report.financial;
   const online = report.channels.find((c) => c.channel === 'online')!;
@@ -118,12 +123,12 @@ function DashboardBody({ report, attention, canSeeOrders, canSeeStock }: { repor
 
   return (
     <>
-      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <li>
           <KpiCard label="Net Sales" value={formatPaise(t.netSalesPaise)} icon={IndianRupee} color="blue" highlight pill={t.refundsPaise ? `−${formatPaise(t.refundsPaise)} refunds` : plural(t.orders, 'order')} link={{ to: '/reports', label: 'Reports' }} />
         </li>
-        <li>
-          {f ? (
+        {f && (
+          <li>
             <KpiCard
               label="Gross Profit"
               value={f.grossProfitPaise != null ? formatPaise(f.grossProfitPaise) : '—'}
@@ -134,9 +139,32 @@ function DashboardBody({ report, attention, canSeeOrders, canSeeStock }: { repor
               pillColor={f.marginPercent != null ? 'emerald' : 'orange'}
               link={{ to: '/reports', label: 'Profit' }}
             />
-          ) : (
-            <KpiCard label="To Collect" value={formatPaise(attention.toCollectPaise)} icon={Wallet} color="emerald" highlight pill={`${attention.toCollectOrders} unpaid`} link={{ to: '/offline-orders', label: 'Offline' }} />
-          )}
+          </li>
+        )}
+        {isOwner && (
+          <li>
+            <KpiCard
+              label="Total Earned"
+              value={profit.data ? `${profit.data.allTotals.profitPaise < 0 ? '−' : ''}${formatPaise(Math.abs(profit.data.allTotals.profitPaise))}` : '—'}
+              icon={Wallet}
+              color={profit.data && profit.data.allTotals.profitPaise < 0 ? 'rose' : 'emerald'}
+              highlight
+              pill={profit.data ? `Since ${formatDay(profit.data.startDate)}` : 'After every cost'}
+              link={{ to: '/profit', label: 'Profit' }}
+            />
+          </li>
+        )}
+        <li>
+          <KpiCard
+            label="Waiting Payment"
+            value={formatPaise(attention.toCollectPaise)}
+            icon={Clock}
+            color="orange"
+            highlight={attention.toCollectOrders > 0}
+            pill={attention.toCollectOrders ? `${attention.toCollectOrders} unpaid ${attention.toCollectOrders === 1 ? 'bill' : 'bills'}` : 'All collected'}
+            pillColor={attention.toCollectOrders ? 'orange' : 'emerald'}
+            link={canSeeOrders ? { to: '/offline-orders', label: 'Offline' } : undefined}
+          />
         </li>
         <li>
           <KpiCard label="Online Sales" value={formatPaise(online.salesPaise)} icon={ShoppingBag} color="indigo" pill={plural(online.orders, 'order')} link={{ to: '/orders', label: 'Orders' }} />

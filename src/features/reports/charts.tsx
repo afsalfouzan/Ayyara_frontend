@@ -1,13 +1,21 @@
 import { BarChart3, Table2 } from 'lucide-react';
-import { useState } from 'react';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, type PieLabelRenderProps, type TooltipContentProps } from 'recharts';
+import { useId, useState } from 'react';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipContentProps } from 'recharts';
 import { formatPaise } from '@/lib/money';
 import { periodLabel } from './range';
 import type { GroupBy, Report } from './api';
 
 /** Chart colours in fixed order (style guide). */
-export const CHART_COLORS = ['#3b82f6', '#f97316', '#6366f1', '#10b981', '#ef4444', '#8b5cf6'];
-const CHANNEL_COLORS = { online: '#3b82f6', offline: '#f97316' } as const;
+/** Two-tone gradients (light top → deep bottom), one per bar. */
+const BAR_GRADIENTS = [
+  { from: '#818cf8', to: '#4f46e5' }, // indigo
+  { from: '#38bdf8', to: '#0284c7' }, // sky
+  { from: '#34d399', to: '#059669' }, // emerald
+  { from: '#fbbf24', to: '#f97316' }, // amber → orange
+  { from: '#f472b6', to: '#db2777' }, // pink
+  { from: '#c084fc', to: '#9333ea' }, // purple
+];
+const CHANNEL_COLORS = { online: { from: '#818cf8', to: '#4f46e5' }, offline: { from: '#34d399', to: '#059669' } } as const;
 const AXIS_TICK = { fill: '#94a3b8', fontSize: 11, fontWeight: 500 };
 const GRID = '#e5e7eb';
 const TREND = '#10b981';
@@ -122,30 +130,39 @@ export function SalesTrendChart({ report, height = 250 }: { report: Report; heig
   );
 }
 
-const RADIAN = Math.PI / 180;
-function PieLabel({ cx, cy, midAngle, outerRadius, name, percent }: PieLabelRenderProps) {
-  const radius = Number(outerRadius) + 20;
-  const x = Number(cx) + radius * Math.cos(-(midAngle ?? 0) * RADIAN);
-  const y = Number(cy) + radius * Math.sin(-(midAngle ?? 0) * RADIAN);
-  return (
-    <text x={x} y={y} fill="#374151" textAnchor={x > Number(cx) ? 'start' : 'end'} dominantBaseline="central" fontSize={11} fontWeight={600}>
-      {`${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-    </text>
-  );
-}
-
-/** Online vs offline share of sales. */
+/** Filled pie of online vs offline sales. */
 export function ChannelPie({ report, height = 260 }: { report: Report; height?: number }) {
-  const data = report.channels.filter((c) => c.salesPaise > 0).map((c) => ({ name: c.channel === 'online' ? 'Online' : 'Offline', value: c.salesPaise, orders: c.orders, color: CHANNEL_COLORS[c.channel] }));
+  const gid = useId().replace(/:/g, '');
+  const total = report.channels.reduce((sum, c) => sum + c.salesPaise, 0);
+  const data = report.channels.filter((c) => c.salesPaise > 0).map((c) => ({ key: c.channel, name: c.channel === 'online' ? 'Online' : 'Offline', value: c.salesPaise, ...CHANNEL_COLORS[c.channel] }));
   if (data.length === 0) return <Empty height={height} />;
+  const donut = height - 70;
   return (
     <div>
       <div role="img" aria-label={data.map((d) => `${d.name} ${formatPaise(d.value)}`).join(', ')}>
-        <ResponsiveContainer width="100%" height={height - 40}>
+        <ResponsiveContainer width="100%" height={donut}>
           <PieChart>
-            <Pie data={data} cx="50%" cy="46%" outerRadius={75} dataKey="value" label={PieLabel} labelLine={false} startAngle={90} endAngle={-270} stroke="#fff" strokeWidth={data.length > 1 ? 2 : 0} isAnimationActive={false}>
+            <defs>
               {data.map((d) => (
-                <Cell key={d.name} fill={d.color} />
+                <linearGradient key={d.key} id={`${gid}-${d.key}`} x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor={d.from} />
+                  <stop offset="100%" stopColor={d.to} />
+                </linearGradient>
+              ))}
+            </defs>
+            <Pie
+              data={data}
+              dataKey="value"
+              outerRadius="90%"
+              startAngle={90}
+              endAngle={-270}
+              paddingAngle={data.length > 1 ? 2 : 0}
+              cornerRadius={6}
+              stroke="none"
+              isAnimationActive={false}
+            >
+              {data.map((d) => (
+                <Cell key={d.key} fill={`url(#${gid}-${d.key})`} />
               ))}
             </Pie>
             <Tooltip
@@ -161,32 +178,48 @@ export function ChannelPie({ report, height = 260 }: { report: Report; height?: 
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <ul className="mt-2 flex flex-wrap justify-center gap-x-6 gap-y-1 text-xs">
-        {report.channels.map((c) => (
-          <li key={c.channel} className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full" style={{ background: CHANNEL_COLORS[c.channel] }} aria-hidden />
-            <span className="font-medium text-gray-600 capitalize">{c.channel}</span>
-            <span className="font-mono font-bold text-gray-900">{formatPaise(c.salesPaise)}</span>
-          </li>
-        ))}
+      <ul className="mt-4 grid grid-cols-2 gap-3 text-xs">
+        {report.channels.map((c) => {
+          const color = CHANNEL_COLORS[c.channel];
+          const share = total > 0 ? Math.round((c.salesPaise / total) * 100) : 0;
+          return (
+            <li key={c.channel} className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="size-2.5 rounded-full" style={{ background: `linear-gradient(135deg, ${color.from}, ${color.to})` }} aria-hidden />
+                <span className="font-semibold text-gray-600 capitalize">{c.channel}</span>
+                <span className="ml-auto font-bold text-gray-400">{share}%</span>
+              </div>
+              <p className="mt-1 font-mono text-sm font-bold text-gray-900">{formatPaise(c.salesPaise)}</p>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
 
-/** Sales value per perfume and size, one colour per bar. */
+/** Sales value per perfume and size, one two-tone gradient per bar. */
 export function PerfumeBarChart({ products, height = 280, limit = 6 }: { products: Report['products']; height?: number; limit?: number }) {
-  const data = products.slice(0, limit).map((p, i) => ({ name: `${p.productName} ${p.sizeMl}ml`, value: p.revenue, units: p.units, color: CHART_COLORS[i % CHART_COLORS.length] }));
+  const gid = useId().replace(/:/g, '');
+  const data = products.slice(0, limit).map((p, i) => ({ name: `${p.productName} ${p.sizeMl}ml`, value: p.revenue, units: p.units, ...BAR_GRADIENTS[i % BAR_GRADIENTS.length]! }));
   if (data.length === 0) return <Empty height={height} />;
   return (
     <div role="img" aria-label={`Sales by perfume: ${data.map((d) => `${d.name} ${formatPaise(d.value)}`).join(', ')}`}>
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID} />
-          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ ...AXIS_TICK, fill: '#64748b' }} interval={0} />
+        <BarChart data={data} margin={{ top: 24, right: 12, left: 12, bottom: 5 }} barCategoryGap="28%">
+          <defs>
+            {data.map((d, i) => (
+              <linearGradient key={d.name} id={`${gid}-bar-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={d.from} />
+                <stop offset="100%" stopColor={d.to} />
+              </linearGradient>
+            ))}
+          </defs>
+          <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={GRID} />
+          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ ...AXIS_TICK, fill: '#64748b' }} interval={0} dy={6} />
           <YAxis hide />
           <Tooltip
-            cursor={{ fill: '#f8fafc' }}
+            cursor={false}
             content={({ active, payload }) =>
               active && payload?.length ? (
                 <div className={tooltipBox}>
@@ -197,10 +230,11 @@ export function PerfumeBarChart({ products, height = 280, limit = 6 }: { product
               ) : null
             }
           />
-          <Bar dataKey="value" barSize={35} isAnimationActive={false}>
-            {data.map((d) => (
-              <Cell key={d.name} fill={d.color} />
+          <Bar dataKey="value" maxBarSize={44} radius={[10, 10, 4, 4]} background={{ fill: '#f3f4f6', radius: 10 }} isAnimationActive={false}>
+            {data.map((d, i) => (
+              <Cell key={d.name} fill={`url(#${gid}-bar-${i})`} />
             ))}
+            <LabelList dataKey="value" position="top" offset={8} formatter={(v) => compactRupees(Number(v))} className="font-mono" fill="#374151" fontSize={11} fontWeight={700} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

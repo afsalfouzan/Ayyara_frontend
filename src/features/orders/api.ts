@@ -6,7 +6,7 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partia
 export type FulfilmentStatus = 'unfulfilled' | 'processing' | 'packed' | 'dispatched' | 'delivered' | 'cancelled' | 'returned';
 export type OrderView = 'all' | 'awaiting_payment' | 'to_pack' | 'dispatched' | 'delivered' | 'closed' | 'unpaid' | 'paid' | 'cancelled';
 export type Channel = 'online' | 'offline';
-/** Where an offline sale was made. UK sales record the money only: no stock change, invoice, email or delivery. */
+/** Where an offline sale was made. UK sales record the money only: no stock change or delivery, and nothing is sent by itself. */
 export type SellingRegion = 'india' | 'uk';
 export const REGION_LABEL: Record<SellingRegion, string> = { india: 'India', uk: 'UK' };
 
@@ -61,10 +61,22 @@ export type OrderDetail = OrderSummary & {
   /** Refunded in full but never sent: can be cancelled with its bottles put back in stock. */
   canCancelRefunded: boolean;
   canRecordPayment: boolean;
-  /** False for UK sales, which have no invoice. */
+  /** True once the order has gone through (UK sales too). */
   hasInvoice: boolean;
   /** Ready-written WhatsApp messages for the customer; null for staff who can't see contact details. */
   whatsapp: { invoice: WhatsAppMessage | null; dispatch: WhatsAppMessage | null } | null;
+  /** UK sales only, for staff who can see contact details: sending the invoice by hand. */
+  uk: UkSending | null;
+};
+
+export type InvoiceEmail = { recipient: string; status: 'queued' | 'sent' | 'failed'; error: string | null; sentAt: string | null; createdAt: string };
+export type UkSending = {
+  /** The saved number has no country code (older sales), so WhatsApp can't be used until it is corrected. */
+  phoneNeedsCountryCode: boolean;
+  canEmailInvoice: boolean;
+  canEditContact: boolean;
+  /** Every press of "Send invoice by email", newest first. */
+  invoiceEmails: InvoiceEmail[];
 };
 
 export type WhatsAppMessage = { text: string; url: string };
@@ -88,13 +100,15 @@ export function useOrder(id: number | null) {
     queryKey: ['orders', 'detail', id],
     queryFn: () => api<{ order: OrderDetail }>(`/admin/orders/${id}`).then((d) => d.order),
     enabled: id != null,
+    // An invoice email goes out within seconds; check back until it has.
+    refetchInterval: (query) => (query.state.data?.uk?.invoiceEmails.some((e) => e.status === 'queued') ? 5_000 : false),
   });
 }
 
-function useOrderMutation<TInput>(id: number, path: string) {
+function useOrderMutation<TInput>(id: number, path: string, method: 'POST' | 'PUT' = 'POST') {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: TInput) => api<{ order: OrderDetail }>(`/admin/orders/${id}/${path}`, { method: 'POST', body: input }).then((d) => d.order),
+    mutationFn: (input: TInput) => api<{ order: OrderDetail }>(`/admin/orders/${id}/${path}`, { method, body: input }).then((d) => d.order),
     onSuccess: (order) => {
       queryClient.setQueryData(['orders', 'detail', id], order);
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -170,3 +184,8 @@ export function useCreateUkItem() {
 
 /** Notes in the order history that a WhatsApp message was opened or copied for the customer. */
 export const useNoteWhatsApp = (id: number) => useOrderMutation<{ kind: 'invoice' | 'dispatch'; via: 'whatsapp' | 'copy' }>(id, 'whatsapp-sent');
+
+/** UK sales: emails the invoice (PDF attached). Each call sends again. */
+export const useEmailInvoice = (id: number) => useOrderMutation<void>(id, 'email-invoice');
+/** UK sales: adds or corrects the WhatsApp number (with country code) and email on the order. Sends nothing. */
+export const useUpdateUkContact = (id: number) => useOrderMutation<{ phone: string; email: string }>(id, 'contact', 'PUT');

@@ -5,6 +5,7 @@ import { controlClass, FormField, Select } from '@/components/ui/controls';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
+import { istToday } from '@/lib/dates';
 import { fieldErrorsOf, messageOf } from '@/lib/errors';
 import { formatPaise, paiseToInput } from '@/lib/money';
 import { monthName, useCreateEmployee, usePaySalary, useUpdateEmployee, type Employee, type PayAccount, type SalaryKind } from './api';
@@ -30,6 +31,7 @@ function EmployeeForm({ employee, onDone }: { employee: Employee | null; onDone:
   const [role, setRole] = useState(employee?.role ?? '');
   const [phone, setPhone] = useState(employee?.phone ?? '');
   const [salary, setSalary] = useState(employee ? paiseToInput(employee.monthlySalaryPaise) : '');
+  const [startedOn, setStartedOn] = useState(employee?.startedOn ?? istToday());
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function submit(event: FormEvent) {
@@ -40,7 +42,7 @@ function EmployeeForm({ employee, onDone }: { employee: Employee | null; onDone:
     if ('error' in parsed) problems.monthlySalaryPaise = parsed.error;
     setErrors(problems);
     if (Object.keys(problems).length || 'error' in parsed) return;
-    const body = { name: name.trim(), role: role.trim(), phone: phone.trim(), monthlySalaryPaise: parsed.paise };
+    const body = { name: name.trim(), role: role.trim(), phone: phone.trim(), monthlySalaryPaise: parsed.paise, startedOn };
     try {
       if (employee) await update.mutateAsync({ id: employee.id, ...body });
       else await create.mutateAsync(body);
@@ -79,6 +81,9 @@ function EmployeeForm({ employee, onDone }: { employee: Employee | null; onDone:
       </div>
       <FormField label="Monthly salary" htmlFor="employee-salary" error={errors.monthlySalaryPaise} hint="Filled in for you each month. You can change the amount when paying.">
         <AmountInput id="employee-salary" value={salary} onChange={setSalary} />
+      </FormField>
+      <FormField label="Joined on" htmlFor="employee-started" error={errors.startedOn} hint="The day they started work. Profit counts their salary from this day.">
+        <DatePicker id="employee-started" label="Joined on" className="w-full" value={startedOn} onChange={setStartedOn} max={istToday()} />
       </FormField>
       {employee && (
         <button type="button" onClick={() => void setActive(!employee.isActive)} className="text-xs font-bold text-rose-700 underline underline-offset-2">
