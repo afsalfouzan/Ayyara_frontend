@@ -49,7 +49,7 @@ export type OrderSummary = {
 
 export type OrderDetail = OrderSummary & {
   /** `unitCostPaise`: UK sales only, and only for staff who may see purchase costs. */
-  items: { id: number; productName: string; sizeMl: number; quantity: number; unitPricePaise: number; lineTotalPaise: number; unitCostPaise?: number | null }[];
+  items: { id: number; productName: string; sizeMl: number; quantity: number; mrpPaise: number | null; unitPricePaise: number; lineTotalPaise: number; unitCostPaise?: number | null }[];
   history: { id: number; field: 'status' | 'payment' | 'fulfilment'; fromStatus: string | null; toStatus: string; note: string | null; actor: string | null; createdAt: string }[];
   payments: { id: number; provider: 'razorpay' | 'offline'; reference: string | null; razorpayPaymentId: string | null; amountPaise: number; status: string; method: string | null; errorDescription: string | null; createdAt: string }[];
   refunds: { id: number; amountPaise: number; status: 'pending' | 'processed' | 'failed'; reason: string; stockAction: 'none' | 'cancel_restock' | 'returned'; automatic: boolean; razorpayRefundId: string | null; processedAt: string | null; createdAt: string }[];

@@ -10,15 +10,16 @@ import { BalanceStrip } from '@/features/accounts/BalanceStrip';
 import { useSession } from '@/features/auth/session';
 import { useProfit } from '@/features/profit/api';
 import { OrderStateBadge } from '@/features/orders/labels';
-import { useDashboard, type Attention, type Report } from '@/features/reports/api';
+import { useDashboard, useFirstDay, type Attention, type Report } from '@/features/reports/api';
 import { ChannelPie, LowStockCard, PerfumeBarChart, SalesTrendChart } from '@/features/reports/charts';
-import { defaultGroupBy, presetRange, type PresetKey, type Range } from '@/features/reports/range';
+import { allTimeRange, defaultGroupBy, presetRange, type PresetKey, type Range } from '@/features/reports/range';
 import { RangePicker } from '@/features/reports/RangePicker';
 import { formatDay, istToday } from '@/lib/dates';
 import { formatRelative } from '@/lib/format';
 import { formatPaise } from '@/lib/money';
 
-const RANGE_TABS: { key: Exclude<PresetKey, 'custom' | 'all'>; label: string }[] = [
+const RANGE_TABS: { key: Exclude<PresetKey, 'custom'>; label: string }[] = [
+  { key: 'all', label: 'All Time' },
   { key: 'today', label: 'Today' },
   { key: '7d', label: '7 Days' },
   { key: '30d', label: '30 Days' },
@@ -27,8 +28,11 @@ const RANGE_TABS: { key: Exclude<PresetKey, 'custom' | 'all'>; label: string }[]
 
 export default function DashboardPage() {
   const { user, can } = useSession();
-  const [range, setRange] = useState<Range>(() => presetRange('7d'));
-  const query = useDashboard(range.from, range.to, defaultGroupBy(range));
+  const firstDay = useFirstDay();
+  const [picked, setRange] = useState<Range | null>(null);
+  // Opens on "All time"; if the first day can't be loaded, on the last 30 days instead.
+  const range = picked ?? (firstDay.isSuccess ? allTimeRange(firstDay.data) : firstDay.isError ? presetRange('30d') : null);
+  const query = useDashboard(range?.from ?? '', range?.to ?? '', range ? defaultGroupBy(range) : 'day');
   const firstName = user?.name.split(' ')[0] ?? '';
 
   return (
@@ -64,18 +68,18 @@ export default function DashboardPage() {
                 key={tab.key}
                 role="tab"
                 type="button"
-                aria-selected={range.preset === tab.key}
-                onClick={() => setRange(presetRange(tab.key))}
+                aria-selected={range?.preset === tab.key}
+                onClick={() => setRange(tab.key === 'all' ? allTimeRange(firstDay.data ?? null) : presetRange(tab.key))}
                 className={clsx(
                   'rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-colors',
-                  range.preset === tab.key ? 'bg-white text-neutral-900 shadow-sm' : 'text-gray-500 hover:text-neutral-900',
+                  range?.preset === tab.key ? 'bg-white text-neutral-900 shadow-sm' : 'text-gray-500 hover:text-neutral-900',
                 )}
               >
                 {tab.label}
               </button>
             ))}
           </div>
-          <RangePicker value={range} onChange={setRange} iconOnly />
+          <RangePicker value={range ?? presetRange('30d')} onChange={setRange} iconOnly firstDay={firstDay.data} />
           <button
             type="button"
             onClick={() => void query.refetch()}

@@ -132,6 +132,10 @@ function OrderBody({ order }: { order: OrderDetail }) {
             <li key={item.id} className="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">
               <span>
                 {item.productName} · {item.sizeMl} ML <span className="text-fg-muted">× {item.quantity}</span>
+                <span className="block text-xs text-fg-muted">
+                  {/* UK sales have no separate MRP: the price entered with the sale is shown as the MRP. */}
+                  {item.mrpPaise != null ? <>MRP {formatPaise(item.mrpPaise)} · Offer price {formatPaise(item.unitPricePaise)} each</> : <>MRP {formatPaise(item.unitPricePaise)} each</>}
+                </span>
                 {item.unitCostPaise != null && <span className="block text-xs text-fg-muted">Cost {formatPaise(item.unitCostPaise)} each</span>}
               </span>
               <span className="tabular-nums">{formatPaise(item.lineTotalPaise)}</span>

@@ -59,6 +59,7 @@ export function useDashboard(from: string, to: string, groupBy: GroupBy) {
     queryKey: ['dashboard', from, to, groupBy],
     queryFn: () => api<{ report: Report; attention: Attention }>(`/admin/reports/dashboard?${params(from, to, groupBy)}`),
     placeholderData: keepPreviousData,
+    enabled: Boolean(from),
     refetchInterval: 60_000,
   });
 }

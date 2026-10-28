@@ -198,6 +198,30 @@ export function ChannelPie({ report, height = 260 }: { report: Report; height?: 
   );
 }
 
+/** Greedy word wrap so long perfume names fit under a narrow bar. */
+function wrapLabel(text: string, maxChars = 9) {
+  const lines: string[] = [];
+  for (const word of text.split(' ')) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && `${last} ${word}`.length <= maxChars) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  return lines;
+}
+
+function WrappedTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string } }) {
+  const lines = wrapLabel(String(payload?.value ?? ''));
+  return (
+    <text x={x} y={y} dy={14} textAnchor="middle" fill="#64748b" fontSize={10} fontWeight={500}>
+      {lines.map((line, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? 0 : 12}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
 /** Sales value per perfume and size, one two-tone gradient per bar. */
 export function PerfumeBarChart({ products, height = 280, limit = 6 }: { products: Report['products']; height?: number; limit?: number }) {
   const gid = useId().replace(/:/g, '');
@@ -206,7 +230,7 @@ export function PerfumeBarChart({ products, height = 280, limit = 6 }: { product
   return (
     <div role="img" aria-label={`Sales by perfume: ${data.map((d) => `${d.name} ${formatPaise(d.value)}`).join(', ')}`}>
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data} margin={{ top: 24, right: 12, left: 12, bottom: 5 }} barCategoryGap="28%">
+        <BarChart data={data} margin={{ top: 24, right: 8, left: 8, bottom: 30 }} barCategoryGap="28%">
           <defs>
             {data.map((d, i) => (
               <linearGradient key={d.name} id={`${gid}-bar-${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -216,7 +240,7 @@ export function PerfumeBarChart({ products, height = 280, limit = 6 }: { product
             ))}
           </defs>
           <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={GRID} />
-          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ ...AXIS_TICK, fill: '#64748b' }} interval={0} dy={6} />
+          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={<WrappedTick />} interval={0} height={50} />
           <YAxis hide />
           <Tooltip
             cursor={false}
